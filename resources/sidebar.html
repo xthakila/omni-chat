@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OmniChat Sidebar</title>
+    <style>
+        :root {
+            --bg: #1e1e2e;
+            --bg-surface: #313244;
+            --bg-hover: #45475a;
+            --bg-active: #585b70;
+            --accent: #cba6f7;
+            --accent-dim: rgba(203,166,247,0.15);
+            --text: #cdd6f4;
+            --text-dim: #6c7086;
+            --red: #f38ba8;
+            --green: #a6e3a1;
+            --peach: #fab387;
+            --blue: #89b4fa;
+            --pink: #f5c2e7;
+            --mauve: #cba6f7;
+            --teal: #94e2d5;
+            --yellow: #f9e2af;
+            --border: rgba(205,214,244,0.06);
+            --pill-w: 4px;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { height: 100%; overflow: hidden; }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            display: flex;
+            flex-direction: column;
+            user-select: none;
+            width: 68px;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* --- Drag region (title bar area) --- */
+        .drag-region {
+            height: 38px;
+            -webkit-app-region: drag;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        /* --- Header / Logo --- */
+        .sidebar-header {
+            padding: 6px 0 10px;
+            display: flex;
+            justify-content: center;
+        }
+        .logo {
+            width: 42px; height: 42px;
+            border-radius: 16px;
+            background: linear-gradient(135deg, var(--mauve), var(--blue));
+            display: flex; align-items: center; justify-content: center;
+            font-size: 20px; font-weight: 800; color: var(--bg);
+            letter-spacing: -0.5px;
+            transition: border-radius 0.2s cubic-bezier(.4,0,.2,1);
+            cursor: default;
+        }
+        .logo:hover { border-radius: 12px; }
+
+        .divider {
+            width: 32px; height: 2px; margin: 4px auto 8px;
+            background: var(--border);
+            border-radius: 1px;
+        }
+
+        /* --- Services list --- */
+        .services-list {
+            flex: 1;
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding: 0 0 4px;
+            scrollbar-width: none;
+        }
+        .services-list::-webkit-scrollbar { display: none; }
+
+        .svc-wrapper {
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 56px;
+        }
+
+        /* Active indicator pill (left edge) */
+        .svc-pill {
+            position: absolute;
+            left: 0; top: 50%;
+            width: var(--pill-w);
+            background: var(--text);
+            border-radius: 0 var(--pill-w) var(--pill-w) 0;
+            transition: height 0.2s cubic-bezier(.4,0,.2,1), opacity 0.15s;
+            transform: translateY(-50%);
+            height: 0; opacity: 0;
+        }
+        .svc-wrapper:hover .svc-pill { height: 20px; opacity: 1; }
+        .svc-wrapper.active .svc-pill { height: 36px; opacity: 1; background: var(--accent); }
+
+        /* Service icon bubble */
+        .svc-icon {
+            width: 46px; height: 46px;
+            border-radius: 24px;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer;
+            position: relative;
+            transition: border-radius 0.2s cubic-bezier(.4,0,.2,1),
+                        background 0.15s;
+            background: var(--bg-surface);
+            font-size: 20px; font-weight: 700;
+            overflow: hidden;
+        }
+        .svc-wrapper:hover .svc-icon { border-radius: 16px; background: var(--bg-hover); }
+        .svc-wrapper.active .svc-icon { border-radius: 16px; }
+
+        /* Service icon image (if available) */
+        .svc-icon img {
+            width: 28px; height: 28px;
+            object-fit: contain;
+            pointer-events: none;
+        }
+
+        /* Tooltip */
+        .svc-tooltip {
+            position: absolute;
+            left: 72px; top: 50%; transform: translateY(-50%);
+            background: #11111b; color: var(--text);
+            padding: 8px 12px; border-radius: 6px;
+            font-size: 13px; font-weight: 600;
+            white-space: nowrap;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.12s;
+            z-index: 1000;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+        }
+        .svc-tooltip::before {
+            content: '';
+            position: absolute; left: -4px; top: 50%;
+            transform: translateY(-50%) rotate(45deg);
+            width: 8px; height: 8px;
+            background: #11111b;
+        }
+        .svc-wrapper:hover .svc-tooltip { opacity: 1; }
+
+        /* Badge */
+        .svc-badge {
+            position: absolute;
+            bottom: -1px; right: -1px;
+            min-width: 18px; height: 18px;
+            border-radius: 9px;
+            font-size: 11px; font-weight: 700;
+            line-height: 18px; text-align: center;
+            padding: 0 5px;
+            border: 3px solid var(--bg);
+            pointer-events: none;
+        }
+        .svc-badge.direct { background: var(--red); color: #11111b; }
+        .svc-badge.indirect { background: var(--text-dim); color: var(--bg); min-width: 12px; height: 12px; padding: 0; }
+
+        /* --- Footer --- */
+        .sidebar-footer {
+            padding: 8px 0 12px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+        }
+        .divider-bottom {
+            width: 32px; height: 2px; margin-bottom: 4px;
+            background: var(--border);
+            border-radius: 1px;
+        }
+        .footer-btn {
+            width: 42px; height: 42px;
+            border-radius: 24px;
+            border: none;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer;
+            transition: border-radius 0.2s cubic-bezier(.4,0,.2,1),
+                        background 0.15s, color 0.15s;
+            background: var(--bg-surface);
+            color: var(--text-dim);
+            font-size: 20px;
+        }
+        .footer-btn:hover {
+            border-radius: 16px;
+            background: var(--green);
+            color: var(--bg);
+        }
+        .footer-btn.settings:hover {
+            background: var(--bg-hover);
+            color: var(--text);
+        }
+        .footer-btn svg {
+            width: 20px; height: 20px;
+            fill: currentColor;
+        }
+
+        /* Keyboard shortcut hint */
+        .svc-kbd {
+            position: absolute;
+            top: 2px; left: 2px;
+            font-size: 9px; font-weight: 600;
+            color: var(--text-dim);
+            opacity: 0;
+            transition: opacity 0.1s;
+            pointer-events: none;
+        }
+        body.show-kbd .svc-kbd { opacity: 0.6; }
+
+        /* --- Service Picker Overlay --- */
+        .picker-overlay {
+            position: fixed;
+            top: 0; left: 68px; right: 0; bottom: 0;
+            width: 320px;
+            background: var(--bg);
+            z-index: 2000;
+            display: none;
+            flex-direction: column;
+            border-right: 1px solid var(--border);
+            box-shadow: 4px 0 24px rgba(0,0,0,0.5);
+        }
+        .picker-overlay.open { display: flex; }
+        .picker-header {
+            padding: 16px 16px 8px;
+            flex-shrink: 0;
+        }
+        .picker-header h3 {
+            font-size: 14px; font-weight: 700; margin-bottom: 10px; color: var(--text);
+        }
+        .picker-search {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid var(--bg-hover);
+            border-radius: 8px;
+            background: var(--bg-surface);
+            color: var(--text);
+            font-size: 13px;
+            outline: none;
+        }
+        .picker-search:focus { border-color: var(--accent); }
+        .picker-search::placeholder { color: var(--text-dim); }
+        .picker-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 4px 8px;
+            scrollbar-width: thin;
+            scrollbar-color: var(--bg-hover) transparent;
+        }
+        .picker-item {
+            display: flex;
+            align-items: center;
+            padding: 8px 10px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.1s;
+            gap: 10px;
+        }
+        .picker-item:hover { background: var(--bg-surface); }
+        .picker-item-icon {
+            width: 32px; height: 32px;
+            border-radius: 8px;
+            background: var(--bg-hover);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 14px; font-weight: 700;
+            flex-shrink: 0;
+            overflow: hidden;
+        }
+        .picker-item-icon svg { width: 20px; height: 20px; }
+        .picker-item-name {
+            font-size: 13px; font-weight: 500; color: var(--text);
+        }
+        .picker-item-url {
+            font-size: 11px; color: var(--text-dim);
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+            max-width: 200px;
+        }
+        .picker-close {
+            position: absolute; top: 12px; right: 12px;
+            background: none; border: none; color: var(--text-dim);
+            font-size: 18px; cursor: pointer; padding: 4px;
+        }
+        .picker-close:hover { color: var(--text); }
+
+        /* Team ID prompt inside picker */
+        .team-prompt {
+            padding: 16px;
+            display: none;
+        }
+        .team-prompt.open { display: block; }
+        .team-prompt label {
+            display: block; font-size: 12px; color: var(--text-dim);
+            margin-bottom: 6px;
+        }
+        .team-prompt input {
+            width: 100%; padding: 8px 12px;
+            border: 1px solid var(--bg-hover); border-radius: 8px;
+            background: var(--bg-surface); color: var(--text);
+            font-size: 13px; outline: none;
+        }
+        .team-prompt input:focus { border-color: var(--accent); }
+        .team-prompt button {
+            margin-top: 10px; width: 100%; padding: 8px;
+            background: var(--accent); color: var(--bg);
+            border: none; border-radius: 8px; cursor: pointer;
+            font-size: 13px; font-weight: 600;
+        }
+        .team-prompt button:hover { opacity: 0.9; }
+
+        /* --- Context Menu --- */
+        .ctx-menu {
+            position: fixed;
+            background: #11111b;
+            border: 1px solid var(--bg-hover);
+            border-radius: 8px;
+            padding: 4px;
+            z-index: 3000;
+            display: none;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+            min-width: 140px;
+        }
+        .ctx-menu.open { display: block; }
+        .ctx-item {
+            padding: 8px 12px;
+            font-size: 12px;
+            cursor: pointer;
+            border-radius: 4px;
+            color: var(--text);
+        }
+        .ctx-item:hover { background: var(--bg-hover); }
+        .ctx-item.danger { color: var(--red); }
+        .ctx-item.danger:hover { background: rgba(243,139,168,0.1); }
+    </style>
+</head>
+<body>
+    <div class="drag-region"></div>
+    <div class="sidebar-header">
+        <div class="logo">O</div>
+    </div>
+    <div class="divider"></div>
+    <div class="services-list" id="servicesList"></div>
+    <div class="sidebar-footer">
+        <div class="divider-bottom"></div>
+        <button class="footer-btn add" id="addBtn" title="Add service">
+            <svg viewBox="0 0 24 24"><path d="M12 4v16m-8-8h16" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" fill="none"/></svg>
+        </button>
+        <button class="footer-btn settings" id="settingsBtn" title="Settings">
+            <svg viewBox="0 0 24 24"><path d="M12 15.5A3.5 3.5 0 1 0 12 8.5a3.5 3.5 0 0 0 0 7zM19.43 12.98c.04-.32.07-.64.07-.98s-.03-.66-.07-.98l2.11-1.65a.5.5 0 0 0 .12-.64l-2-3.46a.5.5 0 0 0-.61-.22l-2.49 1a7.03 7.03 0 0 0-1.69-.98l-.38-2.65A.49.49 0 0 0 14 2h-4a.49.49 0 0 0-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1a.5.5 0 0 0-.61.22l-2 3.46a.49.49 0 0 0 .12.64l2.11 1.65c-.04.32-.07.65-.07.98s.03.66.07.98l-2.11 1.65a.5.5 0 0 0-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.05.24.26.42.49.42h4c.24 0 .44-.18.49-.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.23.09.49 0 .61-.22l2-3.46a.5.5 0 0 0-.12-.64l-2.11-1.65z" fill="currentColor"/></svg>
+        </button>
+    </div>
+
+    <!-- Service picker overlay -->
+    <div class="picker-overlay" id="picker">
+        <button class="picker-close" id="pickerClose">&times;</button>
+        <div class="picker-header">
+            <h3>Add a service</h3>
+            <input class="picker-search" id="pickerSearch" type="text" placeholder="Search 409 services..." autofocus>
+        </div>
+        <div class="picker-list" id="pickerList"></div>
+        <div class="team-prompt" id="teamPrompt">
+            <label id="teamLabel">Workspace name</label>
+            <input id="teamInput" type="text" placeholder="e.g. mycompany">
+            <button id="teamSubmit">Add</button>
+        </div>
+    </div>
+
+    <!-- Right-click context menu -->
+    <div class="ctx-menu" id="ctxMenu">
+        <div class="ctx-item" id="ctxRemove">Remove service</div>
+    </div>
+
+    <script>
+    (function() {
+        'use strict';
+
+        var services = [];
+        var activeServiceId = null;
+        var badges = {};
+
+        var PALETTE = [
+            'var(--blue)', 'var(--green)', 'var(--peach)', 'var(--pink)',
+            'var(--mauve)', 'var(--teal)', 'var(--yellow)', 'var(--red)'
+        ];
+
+        // Well-known service icons (SVG inline)
+        var SERVICE_ICONS = {
+            slack: '<svg viewBox="0 0 24 24"><path fill="#E01E5A" d="M5.04 15.16a2.53 2.53 0 0 1-2.52 2.53A2.53 2.53 0 0 1 0 15.16a2.53 2.53 0 0 1 2.52-2.52h2.52v2.52zm1.27 0a2.53 2.53 0 0 1 2.52-2.52 2.53 2.53 0 0 1 2.52 2.52v6.32A2.53 2.53 0 0 1 8.83 24a2.53 2.53 0 0 1-2.52-2.52v-6.32z"/><path fill="#36C5F0" d="M8.83 5.04a2.53 2.53 0 0 1-2.52-2.52A2.53 2.53 0 0 1 8.83 0a2.53 2.53 0 0 1 2.52 2.52v2.52H8.83zm0 1.27a2.53 2.53 0 0 1 2.52 2.52 2.53 2.53 0 0 1-2.52 2.52H2.52A2.53 2.53 0 0 1 0 8.83a2.53 2.53 0 0 1 2.52-2.52h6.31z"/><path fill="#2EB67D" d="M18.96 8.83a2.53 2.53 0 0 1 2.52-2.52A2.53 2.53 0 0 1 24 8.83a2.53 2.53 0 0 1-2.52 2.52h-2.52V8.83zm-1.27 0a2.53 2.53 0 0 1-2.52 2.52 2.53 2.53 0 0 1-2.52-2.52V2.52A2.53 2.53 0 0 1 15.17 0a2.53 2.53 0 0 1 2.52 2.52v6.31z"/><path fill="#ECB22E" d="M15.17 18.96a2.53 2.53 0 0 1 2.52 2.52A2.53 2.53 0 0 1 15.17 24a2.53 2.53 0 0 1-2.52-2.52v-2.52h2.52zm0-1.27a2.53 2.53 0 0 1-2.52-2.52 2.53 2.53 0 0 1 2.52-2.52h6.31A2.53 2.53 0 0 1 24 15.17a2.53 2.53 0 0 1-2.52 2.52h-6.31z"/></svg>',
+            whatsapp: '<svg viewBox="0 0 24 24"><path fill="#25D366" d="M17.47 14.38c-.3-.15-1.76-.87-2.03-.97-.27-.1-.47-.15-.67.15s-.77.97-.94 1.17-.35.22-.64.07c-.3-.15-1.25-.46-2.38-1.47-.88-.79-1.47-1.76-1.64-2.06s-.02-.46.13-.6c.13-.14.3-.35.44-.52.15-.18.2-.3.3-.5s.05-.37-.02-.52c-.08-.15-.67-1.6-.91-2.2-.24-.57-.49-.5-.67-.5h-.57c-.2 0-.52.07-.8.37-.27.3-1.04 1.02-1.04 2.49s1.07 2.89 1.22 3.09c.15.2 2.1 3.2 5.08 4.49.71.3 1.27.49 1.7.63.71.22 1.36.19 1.87.12.57-.09 1.76-.72 2.01-1.42.25-.69.25-1.29.17-1.42-.07-.12-.27-.19-.57-.34zM12 21.8a9.86 9.86 0 0 1-5.03-1.38l-.36-.21-3.74.98.99-3.65-.24-.37A9.82 9.82 0 0 1 2.2 12c0-5.43 4.42-9.84 9.85-9.84A9.78 9.78 0 0 1 19 5.12 9.78 9.78 0 0 1 21.84 12c0 5.43-4.42 9.84-9.85 9.84zM12 0C5.37 0 0 5.37 0 12c0 2.12.55 4.17 1.6 5.99L0 24l6.17-1.62A11.94 11.94 0 0 0 12 24c6.63 0 12-5.37 12-12S18.63 0 12 0z"/></svg>',
+            telegram: '<svg viewBox="0 0 24 24"><path fill="#26A5E4" d="M12 0C5.37 0 0 5.37 0 12s5.37 12 12 12 12-5.37 12-12S18.63 0 12 0zm5.56 8.19l-1.97 9.26c-.15.66-.54.82-1.09.51l-3.02-2.22-1.46 1.4c-.16.16-.3.3-.61.3l.22-3.05 5.57-5.03c.24-.22-.05-.34-.38-.13L8.35 13.9l-2.95-.92c-.64-.2-.66-.64.13-.95l11.54-4.45c.53-.2 1 .13.83.95l-.34-.34z"/></svg>',
+            discord: '<svg viewBox="0 0 24 24"><path fill="#5865F2" d="M20.32 4.37A19.8 19.8 0 0 0 15.43 3c-.21.38-.46.88-.63 1.29a18.42 18.42 0 0 0-5.58 0C9.05 3.88 8.79 3.38 8.58 3A19.7 19.7 0 0 0 3.68 4.37C.53 9.1-.33 13.71.1 18.26A19.9 19.9 0 0 0 6.17 21c.49-.66.92-1.36 1.29-2.1-.71-.27-1.39-.59-2.03-.97.17-.12.34-.25.5-.38a14.16 14.16 0 0 0 12.14 0c.16.13.33.26.5.38-.65.39-1.33.71-2.04.97.37.74.8 1.44 1.29 2.1a19.85 19.85 0 0 0 6.08-2.74c.51-5.31-.86-9.87-3.58-13.93zM8.01 15.33c-1.18 0-2.16-1.09-2.16-2.42s.95-2.42 2.16-2.42 2.18 1.09 2.16 2.42c0 1.33-.96 2.42-2.16 2.42zm7.98 0c-1.18 0-2.16-1.09-2.16-2.42s.95-2.42 2.16-2.42 2.18 1.09 2.16 2.42c0 1.33-.95 2.42-2.16 2.42z"/></svg>',
+            gmail: '<svg viewBox="0 0 24 24"><path fill="#EA4335" d="M24 5.46v13.08c0 .82-.67 1.49-1.49 1.49H21V7.39l-9 5.5-9-5.5v12.64H1.49C.67 20.03 0 19.36 0 18.54V5.46C0 4.18.97 3.11 2.23 3h.28L12 10.11 21.5 3h.27C23.03 3.11 24 4.18 24 5.46z"/></svg>',
+            messenger: '<svg viewBox="0 0 24 24"><path fill="#0084FF" d="M12 0C5.37 0 0 4.97 0 11.11c0 3.5 1.74 6.62 4.47 8.65V24l4.09-2.24c1.09.3 2.24.46 3.44.46 6.63 0 12-4.97 12-11.11S18.63 0 12 0zm1.2 14.96l-3.06-3.26-5.97 3.26L10.44 8.5l3.13 3.26L19.46 8.5l-6.26 6.46z"/></svg>',
+        };
+
+        function sendIPC(msg) {
+            // IPC via custom URL scheme navigation. Intercepted by Rust RequestHandler.
+            var encoded = encodeURIComponent(JSON.stringify(msg));
+            // Use top-level navigation to omnichat-ipc:// then immediately go back.
+            // on_before_browse intercepts and cancels this navigation before it loads.
+            window.location.href = 'omnichat-ipc://' + encoded;
+        }
+
+        function getInitial(name) {
+            if (!name) return '?';
+            var words = name.trim().split(/\s+/);
+            if (words.length >= 2) return (words[0][0] + words[1][0]).toUpperCase();
+            return name.substring(0, 2).toUpperCase();
+        }
+
+        function getColor(id) {
+            var h = 0;
+            for (var i = 0; i < id.length; i++) h = id.charCodeAt(i) + ((h << 5) - h);
+            return PALETTE[Math.abs(h) % PALETTE.length];
+        }
+
+        function render() {
+            var list = document.getElementById('servicesList');
+            while (list.firstChild) list.removeChild(list.firstChild);
+
+            services.forEach(function(svc, idx) {
+                var wrapper = document.createElement('div');
+                wrapper.className = 'svc-wrapper' + (svc.id === activeServiceId ? ' active' : '');
+
+                // Left pill indicator
+                var pill = document.createElement('div');
+                pill.className = 'svc-pill';
+                wrapper.appendChild(pill);
+
+                // Icon
+                var icon = document.createElement('div');
+                icon.className = 'svc-icon';
+                var rid = (svc.recipe_id || '').toLowerCase();
+                if (svc.id === activeServiceId) {
+                    icon.style.background = getColor(rid || svc.id);
+                }
+
+                if (SERVICE_ICONS[rid]) {
+                    icon.insertAdjacentHTML('beforeend', SERVICE_ICONS[rid]);
+                } else {
+                    icon.textContent = getInitial(svc.name);
+                    icon.style.color = getColor(rid || svc.id);
+                    icon.style.fontSize = '17px';
+                }
+                wrapper.appendChild(icon);
+
+                // Badge
+                var b = badges[svc.id];
+                if (b) {
+                    if (b.direct > 0) {
+                        var badge = document.createElement('div');
+                        badge.className = 'svc-badge direct';
+                        badge.textContent = b.direct > 99 ? '99+' : String(b.direct);
+                        icon.appendChild(badge);
+                    } else if (b.indirect > 0) {
+                        var dot = document.createElement('div');
+                        dot.className = 'svc-badge indirect';
+                        icon.appendChild(dot);
+                    }
+                }
+
+                // Tooltip
+                var tip = document.createElement('div');
+                tip.className = 'svc-tooltip';
+                tip.textContent = svc.name;
+                wrapper.appendChild(tip);
+
+                // Keyboard hint
+                if (idx < 9) {
+                    var kbd = document.createElement('span');
+                    kbd.className = 'svc-kbd';
+                    kbd.textContent = String(idx + 1);
+                    icon.appendChild(kbd);
+                }
+
+                wrapper.addEventListener('click', function() {
+                    sendIPC({ type: 'activate_service', serviceId: svc.id });
+                    activeServiceId = svc.id;
+                    render();
+                });
+
+                // Right-click to remove
+                wrapper.addEventListener('contextmenu', function(e) {
+                    e.preventDefault();
+                    ctxServiceId = svc.id;
+                    var menu = document.getElementById('ctxMenu');
+                    menu.style.left = (e.clientX) + 'px';
+                    menu.style.top = (e.clientY) + 'px';
+                    menu.classList.add('open');
+                });
+
+                list.appendChild(wrapper);
+            });
+        }
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function(e) {
+            if (e.ctrlKey || e.metaKey) {
+                document.body.classList.add('show-kbd');
+                var n = parseInt(e.key);
+                if (n >= 1 && n <= 9 && n - 1 < services.length) {
+                    e.preventDefault();
+                    var svc = services[n - 1];
+                    sendIPC({ type: 'activate_service', serviceId: svc.id });
+                    activeServiceId = svc.id;
+                    render();
+                }
+            }
+        });
+        document.addEventListener('keyup', function() {
+            document.body.classList.remove('show-kbd');
+        });
+
+        // --- Service Picker ---
+        var allRecipes = [];
+        var pendingRecipe = null;
+
+        function openPicker() {
+            document.getElementById('picker').classList.add('open');
+            document.getElementById('pickerSearch').value = '';
+            document.getElementById('pickerSearch').focus();
+            document.getElementById('teamPrompt').classList.remove('open');
+            renderPicker('');
+        }
+        function closePicker() {
+            document.getElementById('picker').classList.remove('open');
+            pendingRecipe = null;
+        }
+
+        function renderPicker(query) {
+            var list = document.getElementById('pickerList');
+            while (list.firstChild) list.removeChild(list.firstChild);
+
+            var q = query.toLowerCase();
+            var filtered = allRecipes.filter(function(r) {
+                return r.name.toLowerCase().indexOf(q) > -1 || r.id.toLowerCase().indexOf(q) > -1;
+            }).sort(function(a, b) {
+                return a.name.localeCompare(b.name);
+            });
+
+            // Show max 50 results
+            filtered.slice(0, 50).forEach(function(recipe) {
+                var item = document.createElement('div');
+                item.className = 'picker-item';
+
+                var icon = document.createElement('div');
+                icon.className = 'picker-item-icon';
+                var rid = recipe.id.toLowerCase();
+                if (SERVICE_ICONS[rid]) {
+                    icon.insertAdjacentHTML('beforeend', SERVICE_ICONS[rid]);
+                } else {
+                    icon.textContent = recipe.name.charAt(0).toUpperCase();
+                    icon.style.color = getColor(rid);
+                }
+                item.appendChild(icon);
+
+                var info = document.createElement('div');
+                var nameEl = document.createElement('div');
+                nameEl.className = 'picker-item-name';
+                nameEl.textContent = recipe.name;
+                info.appendChild(nameEl);
+
+                if (recipe.url) {
+                    var urlEl = document.createElement('div');
+                    urlEl.className = 'picker-item-url';
+                    urlEl.textContent = recipe.url.replace('https://', '').replace('http://', '');
+                    info.appendChild(urlEl);
+                }
+                item.appendChild(info);
+
+                item.addEventListener('click', function() {
+                    if (recipe.hasTeamId) {
+                        // Show team prompt
+                        pendingRecipe = recipe;
+                        document.getElementById('teamPrompt').classList.add('open');
+                        document.getElementById('teamLabel').textContent =
+                            recipe.url.indexOf('{teamId}') > -1
+                                ? 'Workspace / team name (used in URL)'
+                                : 'Team identifier';
+                        document.getElementById('teamInput').value = '';
+                        document.getElementById('teamInput').placeholder = 'e.g. mycompany';
+                        document.getElementById('teamInput').focus();
+                        document.getElementById('pickerList').style.display = 'none';
+                    } else {
+                        addServiceFromRecipe(recipe, null);
+                    }
+                });
+
+                list.appendChild(item);
+            });
+
+            if (filtered.length === 0) {
+                var empty = document.createElement('div');
+                empty.style.cssText = 'padding:20px;text-align:center;color:var(--text-dim);font-size:13px';
+                empty.textContent = q ? 'No services match "' + q + '"' : 'No services available';
+                list.appendChild(empty);
+            }
+        }
+
+        function addServiceFromRecipe(recipe, team) {
+            sendIPC({
+                type: 'add_service',
+                recipeId: recipe.id,
+                name: recipe.name,
+                team: team || undefined,
+            });
+            closePicker();
+        }
+
+        document.getElementById('addBtn').addEventListener('click', function() {
+            // Send IPC to open the service picker in the content area.
+            sendIPC({ type: 'open_picker' });
+        });
+        document.getElementById('pickerClose').addEventListener('click', closePicker);
+        document.getElementById('pickerSearch').addEventListener('input', function() {
+            renderPicker(this.value);
+        });
+        document.getElementById('teamSubmit').addEventListener('click', function() {
+            if (pendingRecipe) {
+                var team = document.getElementById('teamInput').value.trim();
+                addServiceFromRecipe(pendingRecipe, team || null);
+            }
+        });
+        document.getElementById('teamInput').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') document.getElementById('teamSubmit').click();
+        });
+        // Close picker on Escape
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                closePicker();
+                closeCtxMenu();
+            }
+        });
+
+        // --- Context Menu (right-click on service) ---
+        var ctxServiceId = null;
+        function closeCtxMenu() {
+            document.getElementById('ctxMenu').classList.remove('open');
+            ctxServiceId = null;
+        }
+        document.addEventListener('click', closeCtxMenu);
+
+        document.getElementById('ctxRemove').addEventListener('click', function() {
+            if (ctxServiceId) {
+                sendIPC({ type: 'remove_service', serviceId: ctxServiceId });
+                ctxServiceId = null;
+            }
+            closeCtxMenu();
+        });
+
+        document.getElementById('settingsBtn').addEventListener('click', function() {
+            sendIPC({ type: 'open_settings' });
+        });
+
+        // API for Rust state pushes
+        window.__omnichat_sidebar = {
+            updateServices: function(svcs, activeId, badgeData) {
+                services = svcs || [];
+                activeServiceId = activeId;
+                if (badgeData) badges = badgeData;
+                render();
+            },
+            setRecipes: function(recipes) {
+                allRecipes = recipes || [];
+                // Update search placeholder with count
+                var el = document.getElementById('pickerSearch');
+                if (el) el.placeholder = 'Search ' + allRecipes.length + ' services...';
+            },
+        };
+
+        render();
+    })();
+    </script>
+</body>
+</html>

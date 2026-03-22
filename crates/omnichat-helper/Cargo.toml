@@ -1,0 +1,16 @@
+[package]
+name = "omnichat-helper"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "omnichat_helper"
+path = "src/main.rs"
+
+[features]
+default = []
+sandbox = ["cef/sandbox"]
+
+[dependencies]
+cef = { workspace = true }
