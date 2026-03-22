@@ -1,0 +1,140 @@
+name: Build & Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+env:
+  TAG_NAME: ${{ github.ref_name }}
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libgtk-3-dev libxdo-dev cmake
+
+      - name: Install CEF
+        run: |
+          cargo install export-cef-dir
+          mkdir -p "$HOME/.local/share/cef"
+          export-cef-dir --force "$HOME/.local/share/cef"
+
+      - name: Build release
+        env:
+          CEF_PATH: ${{ runner.home }}/.local/share/cef
+          LD_LIBRARY_PATH: ${{ runner.home }}/.local/share/cef
+        run: cargo build --release -j2
+
+      - name: Package
+        run: |
+          mkdir -p omnichat-release
+          cp target/release/omnichat omnichat-release/
+          cp target/release/omnichat_helper omnichat-release/
+          cp install.sh omnichat-release/
+          cp wayland-app-id-proxy.py omnichat-release/
+          cp -r resources omnichat-release/
+          tar czf "omnichat-${TAG_NAME}-linux-x86_64.tar.gz" omnichat-release
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-x86_64
+          path: omnichat-*-linux-x86_64.tar.gz
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install CEF
+        run: |
+          cargo install export-cef-dir
+          mkdir -p "$HOME/.local/share/cef"
+          export-cef-dir --force "$HOME/.local/share/cef"
+
+      - name: Build release
+        env:
+          CEF_PATH: ${{ runner.home }}/.local/share/cef
+          DYLD_FALLBACK_LIBRARY_PATH: ${{ runner.home }}/.local/share/cef
+        run: cargo build --release
+
+      - name: Package
+        run: |
+          mkdir -p omnichat-release
+          cp target/release/omnichat omnichat-release/
+          cp target/release/omnichat_helper omnichat-release/
+          cp install.sh omnichat-release/
+          cp -r resources omnichat-release/
+          tar czf "omnichat-${TAG_NAME}-macos-arm64.tar.gz" omnichat-release
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm64
+          path: omnichat-*-macos-arm64.tar.gz
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install CEF
+        shell: pwsh
+        run: |
+          cargo install export-cef-dir
+          New-Item -ItemType Directory -Force -Path "$env:USERPROFILE/.local/share/cef"
+          export-cef-dir --force "$env:USERPROFILE/.local/share/cef"
+
+      - name: Build release
+        env:
+          CEF_PATH: ${{ runner.home }}/.local/share/cef
+        run: cargo build --release
+
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path omnichat-release
+          Copy-Item target/release/omnichat.exe omnichat-release/
+          Copy-Item target/release/omnichat_helper.exe omnichat-release/
+          Copy-Item install.sh omnichat-release/
+          Copy-Item -Recurse resources omnichat-release/resources
+          Compress-Archive -Path omnichat-release -DestinationPath "omnichat-$env:TAG_NAME-windows-x86_64.zip"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-x86_64
+          path: omnichat-*-windows-x86_64.zip
+
+  release:
+    needs: [build-linux, build-macos, build-windows]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            linux-x86_64/*.tar.gz
+            macos-arm64/*.tar.gz
+            windows-x86_64/*.zip
+          generate_release_notes: true
