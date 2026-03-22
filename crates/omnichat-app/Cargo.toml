@@ -1,0 +1,30 @@
+[package]
+name = "omnichat-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "omnichat"
+path = "src/main.rs"
+
+[features]
+default = []
+sandbox = ["cef/sandbox"]
+
+[dependencies]
+cef = { workspace = true }
+rusqlite = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+notify-rust = { workspace = true }
+tray-icon = { workspace = true }
+log = { workspace = true }
+env_logger = { workspace = true }
+chrono = { workspace = true }
+dirs-next = { workspace = true }
+open = { workspace = true }
+gtk = { workspace = true }
+flate2 = { workspace = true }
+libc = { workspace = true }
