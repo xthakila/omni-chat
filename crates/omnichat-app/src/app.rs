@@ -219,25 +219,9 @@ wrap_window_delegate! {
             RuntimeStyle::ALLOY
         }
 
-        fn is_frameless(&self, _window: Option<&mut Window>) -> i32 {
-            1 // Frameless — we draw our own title bar region
-        }
-
-        fn with_standard_window_buttons(&self, _window: Option<&mut Window>) -> i32 {
-            1 // Keep native close/min/max buttons overlaid on the frameless window
-        }
-
-        fn titlebar_height(
-            &self,
-            _window: Option<&mut Window>,
-            titlebar_height: Option<&mut f32>,
-        ) -> i32 {
-            // Set the draggable title bar region height (top of content area).
-            if let Some(h) = titlebar_height {
-                *h = 38.0;
-            }
-            1
-        }
+        // Use native window decorations (GNOME title bar with close/min/max buttons).
+        // CEF Alloy's frameless mode on Wayland removes all decorations without
+        // providing its own window controls, so we use the OS-native title bar.
 
         fn can_resize(&self, _window: Option<&mut Window>) -> i32 {
             1
