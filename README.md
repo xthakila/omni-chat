@@ -1,20 +1,22 @@
 # OmniChat
 
-A lightweight messaging aggregator built with Rust and CEF (Chromium Embedded Framework). Replaces [Ferdium](https://ferdium.org) at 1/60th the binary size with the same 409-recipe ecosystem.
+A lightweight messaging aggregator built with Rust and CEF (Chromium Embedded Framework). A native, ~6 MB shell that runs [Ferdium](https://ferdium.org)-compatible recipes — far smaller than Ferdium's Electron app. (Recipes are not bundled; see [Recipes](#recipe-compatibility).)
 
-![OmniChat](https://img.shields.io/badge/binary-6.3MB-brightgreen) ![Recipes](https://img.shields.io/badge/recipes-409-blue) ![Platform](https://img.shields.io/badge/platform-Linux%20x86__64-lightgrey)
+![OmniChat](https://img.shields.io/badge/binary-6.3MB-brightgreen) ![Recipes](https://img.shields.io/badge/recipes-Ferdium--compatible-blue) ![Platform](https://img.shields.io/badge/platform-Linux%20x86__64-lightgrey)
 
 ## Why?
 
-Ferdium uses Electron + React + MobX + AdonisJS + SQLite ORM + 15 simultaneous Chromium webviews = **3-4 GB RAM**. OmniChat replaces it with a native Rust shell using CEF for webviews only, with aggressive lifecycle management.
+Ferdium uses Electron + React + MobX + AdonisJS + SQLite ORM + many simultaneous Chromium webviews. OmniChat replaces the shell with a small native Rust process using CEF for webviews only, with lifecycle management (freeze/hibernate idle services).
 
 | | Ferdium | OmniChat |
 |---|---|---|
-| Binary size | ~400 MB | **6.7 MB** |
+| Binary size | ~400 MB | **6.3 MB** (release, stripped) |
 | Runtime | Electron (Node.js + Chromium) | Rust + CEF |
-| RAM (5 services) | 3-4 GB | ~400-600 MB |
-| Startup | 5-15s | <2s |
-| Recipes | 409 | 409 (same) |
+| Startup (to first paint) | 5–15 s | **~0.4–0.9 s** (measured, Wayland/GNOME) |
+| RAM | 3–4 GB | **~0.8 GB PSS / ~1.5 GB RSS** for 3 services (measured) |
+| Recipes | 409 bundled | Ferdium-compatible (bring your own) |
+
+> Performance figures are measured on the dev machine (Ubuntu/GNOME/Wayland, software-rendered) via `scripts/rss-sampler.sh` and the `OMNICHAT_TIMING` startup timer — not synthetic. RAM is CEF/Chromium-dominated (one renderer process per active service), so it scales with the number of live services; hibernation reclaims it.
 
 ## Features
 
@@ -29,7 +31,9 @@ Ferdium uses Electron + React + MobX + AdonisJS + SQLite ORM + 15 simultaneous C
 - **Do Not Disturb** mode
 - **SQLite persistence** — services and settings survive restarts
 - **Single instance** enforcement
-- **Catppuccin Mocha** dark theme sidebar with Discord-style pill indicators
+- **"Aurora" design system** — dark activity rail with accent active-pill, empty state, light/dark-ready tokens (`resources/theme.css`)
+- **Origin-gated IPC** — privileged actions (add/remove/switch/settings) are accepted only from the app's own trusted UI, never from a loaded service page; outbound link-opens are restricted to `http(s)`/`mailto` (see [Security](#security))
+- **Session-preserving picker/settings** — opening the picker or settings renders in a trusted overlay and does **not** reload (log out) the active service
 
 ## Install
 
@@ -60,16 +64,18 @@ bash install.sh
 git clone https://github.com/xthakila/omni-chat.git
 cd omni-chat
 
-# Download Ferdium recipes (optional, 409 recipes)
-# Place them in ./recipes/ directory
+# (Optional) add recipes so services can be added out of the box — see
+# "Recipe Compatibility" below. Place recipe directories in ./recipes/.
 
 # Build
 export CEF_PATH=~/.local/share/cef
 export LD_LIBRARY_PATH=$CEF_PATH
-cargo build --release -j1  # -j1 to avoid OOM on <32GB RAM
+cargo build --release   # ~3 min; builds fine at default -j on a 16 GB+ machine
 
-# Install
+# Install (installs exactly one launcher entry; ships an uninstaller)
 bash install.sh
+
+# Uninstall later:  ~/.local/lib/omnichat/uninstall.sh   (add --purge to drop data)
 ```
 
 ### Run
@@ -103,8 +109,10 @@ Rust Application (Browser Process)
 - **CEF Views framework** with Alloy runtime for single-window multi-BrowserView layout
 - **IPC via URL scheme** (`omnichat-ipc://`) — JS navigates to custom URL, Rust's `RequestHandler.on_before_browse` intercepts and defers processing via `post_task` to avoid deadlock
 - **No `format!()`** for JS code generation — raw string concatenation because recipe JS contains `{}` braces
-- **State Mutex discipline** — never hold lock during CEF view operations (add/remove child views) to prevent deadlock
-- **Wayland app_id proxy** — Python script that intercepts CEF's empty `xdg_toplevel.set_app_id("")` (opcode 3) and replaces it with `"omnichat"` for correct GNOME taskbar icon
+- **State Mutex discipline** — a non-poisoning `parking_lot::Mutex`; never held during CEF view operations (add/remove child views) to prevent deadlock
+- **IPC trust boundary** — every browser is classified (sidebar / overlay / service) by `Browser::identifier()`; privileged commands are gated to trusted surfaces (see [Security](#security))
+- **Trusted overlay** — picker/settings render in a dedicated overlay BrowserView over the content area, so the active service's session is preserved (not navigated away)
+- **Wayland app_id** — CEF Alloy emits an empty `xdg_toplevel.set_app_id("")` and ignores the in-code hints; `wayland-app-id-proxy.py` is a protocol-proxy attempt but is not yet wired into the launcher (see [Known Limitations](#known-limitations))
 
 ### Project Structure
 
@@ -128,22 +136,29 @@ omnichat/
 │   └── omnichat-helper/          # CEF subprocess (427 KB release)
 │       └── src/main.rs           # RendererSideRouter for cefQuery
 ├── resources/
-│   ├── sidebar.html              # Sidebar UI (Catppuccin theme)
-│   └── settings.html             # Settings page
-├── wayland-app-id-proxy.py       # Fixes CEF's empty Wayland app_id
-└── install.sh                    # Installer (desktop entry, icon, launcher)
+│   ├── theme.css                 # "Aurora" design system (shared tokens)
+│   └── sidebar.html              # Sidebar UI (Aurora dark rail)
+├── scripts/rss-sampler.sh        # Read-only PSS/RSS sampler (perf measurement)
+├── wayland-app-id-proxy.py       # Wayland app_id proxy (not yet wired in)
+├── install.sh                    # Installer (single desktop entry, icon, launcher)
+└── uninstall.sh                  # Uninstaller (removes all artifacts; --purge for data)
 ```
 
+> Note: the service picker and settings pages are generated in `ipc/handler.rs`
+> (data: URIs with the shared theme injected), not as standalone files.
+
 ## Recipe Compatibility
+
+> **Recipes are not bundled.** OmniChat reads [Ferdium](https://github.com/ferdium/ferdium-recipes)-format recipes but ships none in this repo. At first run the service picker is empty until recipe directories are present. OmniChat scans, in order: next to the binary, `~/.local/share/omnichat/recipes/`, `~/.local/share/Ferdium/recipes/`, and `./recipes/`. To populate it, copy a Ferdium `recipes/` set (or an existing Ferdium install's) into one of those locations.
 
 OmniChat uses the same recipe format as Ferdium. Each recipe is a directory with:
 
 - `package.json` — service metadata (URL, capabilities)
 - `webview.js` — badge counting, notification handling
 
-The Ferdium API shim provides: `setBadge()`, `setDialogTitle()`, `loop()`, `onNotify()`, `injectCSS()`, `handleDarkMode()`, `openNewWindow()`, `safeParseInt()`, `isImage()`, `setAvatarImage()`, `initialize()`, `injectJSUnsafe()`, `clearStorageData()`, `releaseServiceWorkers()`
+The Ferdium API shim provides: `setBadge()`, `setDialogTitle()`, `loop()`, `onNotify()`, `injectCSS()`, `handleDarkMode()`, `openNewWindow()`, `safeParseInt()`, `isImage()`, `setAvatarImage()`, `initialize()`, `injectJSUnsafe()`. Intentional no-ops (not needed under CEF's RequestContext isolation): `clearStorageData()`, `releaseServiceWorkers()`.
 
-CommonJS polyfills: `require('path')`, `require('fs')` (from file cache), `__dirname`, `_interopRequireDefault`
+CommonJS polyfills: `require('path')`, `require('fs')` (reads from a small per-recipe file cache only — runtime file I/O is **not** supported; `readFileSync` of an uncached path returns `""`), `__dirname`, `_interopRequireDefault`.
 
 ## Service Lifecycle
 
@@ -158,16 +173,23 @@ CommonJS polyfills: `require('path')`, `require('fs')` (from file cache), `__dir
 
 | Platform | Status | Notes |
 |---|---|---|
-| Linux x86_64 | **Supported** | Tested on Ubuntu 25.10 / GNOME / Wayland |
-| Linux ARM64 | Untested | CEF binaries available, should work |
-| macOS | Code ready | Needs CEF macOS framework + app bundle |
-| Windows | Code ready | Needs CEF Windows DLLs + manifest |
+| Linux x86_64 | **Supported** | Developed/tested on Ubuntu + GNOME/Wayland; CI builds on `ubuntu-latest` |
+| Linux ARM64 | Untested | CEF binaries exist; not built or tested |
+| macOS / Windows | **Planned / Untested** | The CEF webview code is cross-platform, but tray, window integration, and the installer are Linux-only today. Not built in CI. |
+
+## Security
+
+- **Origin-gated IPC.** Each CEF browser is classified at creation as the trusted sidebar, a trusted picker/settings overlay, or an untrusted service page. Privileged commands (add/remove/switch/reorder services, open/change settings) are honored **only** from trusted surfaces; a loaded (possibly compromised) service page cannot drive them. Service pages may report only their **own** badge/notification/title/avatar.
+- **URL-scheme allowlist.** `Ferdium.openNewWindow(url)` / link-opens are restricted to `http(s)` and `mailto`; `file://` and custom protocol handlers are refused.
+- **Recipe trust (note).** Recipe `webview.js` runs as trusted JavaScript inside each service. Only load recipes you trust. CEF runs with `no_sandbox` today; per-service RequestContext isolation separates cookies/storage. Recipe signing + a curated trusted set are planned.
+- **Crash resilience.** State is guarded by a non-poisoning mutex and CEF callbacks degrade gracefully, so one error can't cascade-crash the app.
 
 ## Known Limitations
 
-- **GNOME Wayland taskbar icon**: CEF Alloy runtime sends empty `xdg_toplevel.set_app_id("")`. Worked around with a Wayland protocol proxy (`wayland-app-id-proxy.py`). Root cause is a missing property propagation in Chromium's `ConvertWidgetInitParamsToInitProperties()` in `ui/views/widget/desktop_aura/desktop_window_tree_host_platform.cc`.
-- **CEF runtime required**: ~300MB CEF binary distribution must be installed separately.
-- **Recipe compatibility**: Some Ferdium recipes using Node.js-specific APIs beyond `require('path')` and `require('fs')` may not work. The top 20 messaging services are tested.
+- **GNOME Wayland taskbar icon.** CEF's Alloy runtime sends an empty `xdg_toplevel.set_app_id("")` and ignores the in-code `LinuxWindowProperties` / `--class` hints, so GNOME can't match the window to `omnichat.desktop` (generic icon). The bundled `wayland-app-id-proxy.py` is a protocol-proxy approach to this but is **not yet wired into the launcher**. The in-window and tray icons are correct.
+- **CEF runtime required.** A ~300 MB CEF binary distribution must be installed separately (`export-cef-dir`).
+- **Recipes not bundled** (see above) and **no runtime `fs`** for recipes.
+- **Testing.** 20 unit tests cover the pure logic (URL allowlist, IPC parsing, URL decode, service-URL resolution, DB round-trips), run in CI. Service-by-service compatibility is spot-checked manually, not automated.
 
 ## License
 
