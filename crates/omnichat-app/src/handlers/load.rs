@@ -47,7 +47,7 @@ wrap_load_handler! {
                 None => return,
             };
 
-            let state = self.state.lock().unwrap();
+            let state = self.state.lock();
 
             // Find which service this browser belongs to.
             let service_id = state
@@ -161,7 +161,7 @@ wrap_task! {
 
             // Check the service's lifecycle state to determine poll behavior.
             let (lifecycle, still_exists) = {
-                let s = self.state.lock().unwrap();
+                let s = self.state.lock();
                 let exists = s.browsers.contains_key(&self.service_id);
                 let lifecycle = s
                     .service_manager
@@ -249,7 +249,7 @@ wrap_load_handler! {
             crate::record_first_paint("sidebar");
 
             // Push initial service state + available recipes to the sidebar.
-            let state = self.state.lock().unwrap();
+            let state = self.state.lock();
             let services = state.service_manager.services().clone();
             let active_id = state.active_service_id.clone();
 

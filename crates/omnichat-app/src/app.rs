@@ -1,9 +1,10 @@
 use cef::wrapper::message_router::*;
 use cef::*;
 use log::info;
+use parking_lot::Mutex;
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, OnceLock};
 
 use crate::client::OmniChatClient;
 use crate::recipe::model::Recipe;
@@ -173,7 +174,7 @@ wrap_window_delegate! {
 
             // Store window + layout references for dynamic view management.
             let state = shared_state();
-            let mut s = state.lock().unwrap();
+            let mut s = state.lock();
             s.main_window = Some(window.clone());
             s.box_layout = box_layout.clone();
             drop(s);
@@ -192,19 +193,19 @@ wrap_window_delegate! {
             *content = None;
 
             let state = shared_state();
-            let mut s = state.lock().unwrap();
+            let mut s = state.lock();
             s.main_window = None;
         }
 
         fn can_close(&self, _window: Option<&mut Window>) -> i32 {
             let state = shared_state();
-            let s = state.lock().unwrap();
+            let s = state.lock();
             let browser_ids: Vec<String> = s.browsers.keys().cloned().collect();
             drop(s);
 
             for id in &browser_ids {
                 let state = shared_state();
-                let s = state.lock().unwrap();
+                let s = state.lock();
                 if let Some(browser) = s.browsers.get(id) {
                     if let Some(host) = browser.host() {
                         host.try_close_browser();
@@ -311,11 +312,11 @@ wrap_browser_process_handler! {
             router.add_handler(ipc_handler, false);
 
             {
-                let mut s = state.lock().unwrap();
+                let mut s = state.lock();
                 s.message_router = Some(router.clone());
             }
 
-            let state_guard = state.lock().unwrap();
+            let state_guard = state.lock();
 
             // Create clients (pass router for process message forwarding).
             let client = OmniChatClient::new_client(state.clone(), router.clone());
@@ -338,7 +339,7 @@ wrap_browser_process_handler! {
             drop(state_guard);
 
             {
-                let mut s = state.lock().unwrap();
+                let mut s = state.lock();
                 s.pending_service_ids = first_id;
             }
 
@@ -365,7 +366,7 @@ wrap_browser_process_handler! {
             // Create the content BrowserView (first/active service or welcome page).
             let content_url = if !services.is_empty() {
                 let first_svc = &services[0];
-                let s = state.lock().unwrap();
+                let s = state.lock();
                 let recipe_url = s
                     .recipes
                     .get(&first_svc.recipe_id)
@@ -373,7 +374,7 @@ wrap_browser_process_handler! {
                     .unwrap_or("");
                 let url = first_svc.effective_url_with_recipe(recipe_url);
                 drop(s);
-                let mut s = state.lock().unwrap();
+                let mut s = state.lock();
                 s.active_service_id = Some(first_svc.id.clone());
                 drop(s);
                 url
@@ -405,7 +406,7 @@ wrap_browser_process_handler! {
             if !services.is_empty() {
                 let first_id = services[0].id.clone();
                 if let Some(ref cv) = content_view {
-                    let mut s = state.lock().unwrap();
+                    let mut s = state.lock();
                     s.browser_views.insert(first_id.clone(), cv.clone());
                     s.displayed_service_id = Some(first_id);
                     drop(s);
@@ -435,7 +436,7 @@ wrap_browser_process_handler! {
 /// Create a new BrowserView for a service and optionally swap it into the window.
 /// This is called from the IPC handler on the CEF UI thread.
 pub fn create_service_browser_view(state: &SharedState, service_id: &str) -> Option<BrowserView> {
-    let s = state.lock().unwrap();
+    let s = state.lock();
     let svc = s.service_manager.get_config(service_id)?.clone();
     let recipe_url = s
         .recipes
@@ -451,7 +452,7 @@ pub fn create_service_browser_view(state: &SharedState, service_id: &str) -> Opt
 
     // Create a client for this service.
     let router = {
-        let s = state.lock().unwrap();
+        let s = state.lock();
         s.message_router.clone()
     };
     let mut client = match router {
@@ -470,7 +471,7 @@ pub fn create_service_browser_view(state: &SharedState, service_id: &str) -> Opt
     );
 
     if let Some(ref view) = bv {
-        let mut s = state.lock().unwrap();
+        let mut s = state.lock();
         s.browser_views.insert(service_id.to_string(), view.clone());
         s.pending_service_ids.push(service_id.to_string());
     }
@@ -484,7 +485,7 @@ pub fn create_service_browser_view(state: &SharedState, service_id: &str) -> Opt
 pub fn swap_content_view(state: &SharedState, new_service_id: &str) {
     // 1. Gather everything we need from state, then drop the lock.
     let (window, old_bv, new_bv, layout) = {
-        let s = state.lock().unwrap();
+        let s = state.lock();
         let window = match s.main_window.as_ref() {
             Some(w) => w.clone(),
             None => return,
@@ -515,7 +516,7 @@ pub fn swap_content_view(state: &SharedState, new_service_id: &str) {
 
     // 3. Update state after CEF operations.
     {
-        let mut s = state.lock().unwrap();
+        let mut s = state.lock();
         if new_bv.is_some() {
             s.displayed_service_id = Some(new_service_id.to_string());
         }

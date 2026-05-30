@@ -1,6 +1,6 @@
 use cef::wrapper::message_router::*;
 use cef::*;
-use log::info;
+use log::{info, warn};
 
 use crate::app::SharedState;
 
@@ -15,8 +15,11 @@ wrap_life_span_handler! {
         fn on_after_created(&self, browser: Option<&mut Browser>) {
             debug_assert_ne!(currently_on(ThreadId::UI), 0);
 
-            let browser = browser.cloned().expect("Browser is None");
-            let mut state = self.state.lock().unwrap();
+            let Some(browser) = browser.cloned() else {
+                warn!("on_after_created called with no browser; ignoring");
+                return;
+            };
+            let mut state = self.state.lock();
 
             // Match browser to service by pending_service_ids order.
             // Each browser_host_create_browser call fires on_after_created in order.
@@ -69,8 +72,11 @@ wrap_life_span_handler! {
         fn on_before_close(&self, browser: Option<&mut Browser>) {
             debug_assert_ne!(currently_on(ThreadId::UI), 0);
 
-            let mut browser = browser.cloned().expect("Browser is None");
-            let mut state = self.state.lock().unwrap();
+            let Some(mut browser) = browser.cloned() else {
+                warn!("on_before_close called with no browser; ignoring");
+                return;
+            };
+            let mut state = self.state.lock();
 
             // Notify the MessageRouter that this browser is closing.
             if let Some(ref router) = state.message_router {
@@ -110,8 +116,11 @@ wrap_life_span_handler! {
         fn on_after_created(&self, browser: Option<&mut Browser>) {
             debug_assert_ne!(currently_on(ThreadId::UI), 0);
 
-            let browser = browser.cloned().expect("Browser is None");
-            let mut state = self.state.lock().unwrap();
+            let Some(browser) = browser.cloned() else {
+                warn!("sidebar on_after_created called with no browser; ignoring");
+                return;
+            };
+            let mut state = self.state.lock();
             state.sidebar_browser = Some(browser);
             info!("Sidebar browser created");
         }
@@ -123,7 +132,7 @@ wrap_life_span_handler! {
         fn on_before_close(&self, _browser: Option<&mut Browser>) {
             debug_assert_ne!(currently_on(ThreadId::UI), 0);
 
-            let mut state = self.state.lock().unwrap();
+            let mut state = self.state.lock();
             state.sidebar_browser = None;
             info!("Sidebar browser closed");
 

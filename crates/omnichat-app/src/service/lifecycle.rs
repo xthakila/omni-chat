@@ -38,7 +38,7 @@ impl LifecycleManager {
     /// Check all services and transition as needed.
     /// Should be called on the CEF UI thread.
     pub fn tick(state: &SharedState) {
-        let mut s = state.lock().unwrap();
+        let mut s = state.lock();
         let now = Instant::now();
         let active_id = s.active_service_id.clone();
 
@@ -110,7 +110,7 @@ impl LifecycleManager {
 
     /// Activate a service: bring it to Active state, background the previous one.
     pub fn activate_service(state: &SharedState, service_id: &str) {
-        let mut s = state.lock().unwrap();
+        let mut s = state.lock();
 
         // Background the currently active service.
         if let Some(prev_id) = s.active_service_id.take() {

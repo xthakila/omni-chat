@@ -136,7 +136,7 @@ pub fn handle_message(state: &SharedState, raw: &str) {
             indirect,
         } => {
             debug!("Badge update: {service_id} direct={direct} indirect={indirect}");
-            let mut s = state.lock().unwrap();
+            let mut s = state.lock();
             s.service_manager
                 .update_badge(&service_id, direct, indirect);
 
@@ -157,7 +157,7 @@ pub fn handle_message(state: &SharedState, raw: &str) {
             tag: _,
             silent,
         } => {
-            let s = state.lock().unwrap();
+            let s = state.lock();
 
             // Look up the service that sent this notification.
             // Falls back to active service if service_id is empty.
@@ -183,7 +183,7 @@ pub fn handle_message(state: &SharedState, raw: &str) {
 
         IpcMessage::DialogTitle { service_id, title } => {
             debug!("Dialog title: {service_id} = {title}");
-            let mut s = state.lock().unwrap();
+            let mut s = state.lock();
             let title_opt = if title.is_empty() { None } else { Some(title) };
             s.service_manager.set_dialog_title(&service_id, title_opt);
         }
@@ -203,7 +203,7 @@ pub fn handle_message(state: &SharedState, raw: &str) {
 
             // Background the previously active service.
             {
-                let mut s = state.lock().unwrap();
+                let mut s = state.lock();
                 if let Some(ref prev_id) = s.active_service_id.clone() {
                     if prev_id != &service_id {
                         s.service_manager.set_lifecycle_state(
@@ -216,7 +216,7 @@ pub fn handle_message(state: &SharedState, raw: &str) {
 
             // If the service doesn't have a BrowserView yet, create one.
             let needs_creation = {
-                let s = state.lock().unwrap();
+                let s = state.lock();
                 !s.browser_views.contains_key(&service_id)
             };
             if needs_creation {
@@ -226,7 +226,7 @@ pub fn handle_message(state: &SharedState, raw: &str) {
             // Swap the displayed view.
             crate::app::swap_content_view(state, &service_id);
 
-            let s = state.lock().unwrap();
+            let s = state.lock();
             push_sidebar_state(&s);
         }
 
@@ -244,11 +244,14 @@ pub fn handle_message(state: &SharedState, raw: &str) {
             config.team = team;
 
             {
-                let mut s = state.lock().unwrap();
+                let mut s = state.lock();
                 let sort_order = s.service_manager.services().len() as i32;
                 config.sort_order = sort_order;
                 s.service_manager.add_service(config.clone());
-                let _ = crate::db::queries::save_service(&s.db, &config);
+                crate::db::warn_on_err(
+                    "save_service",
+                    crate::db::queries::save_service(&s.db, &config),
+                );
             }
 
             // Create a BrowserView for the new service.
@@ -257,13 +260,13 @@ pub fn handle_message(state: &SharedState, raw: &str) {
             // Switch to the new service immediately.
             crate::app::swap_content_view(state, &id);
 
-            let s = state.lock().unwrap();
+            let s = state.lock();
             push_sidebar_state(&s);
         }
 
         IpcMessage::RemoveService { service_id } => {
             info!("Removing service: {service_id}");
-            let mut s = state.lock().unwrap();
+            let mut s = state.lock();
 
             // Close the browser if open.
             if let Some(browser) = s.browsers.get(&service_id).cloned() {
@@ -275,13 +278,16 @@ pub fn handle_message(state: &SharedState, raw: &str) {
             s.service_manager.remove_service(&service_id);
 
             // Persist deletion.
-            let _ = crate::db::queries::delete_service(&s.db, &service_id);
+            crate::db::warn_on_err(
+                "delete_service",
+                crate::db::queries::delete_service(&s.db, &service_id),
+            );
             push_sidebar_state(&s);
         }
 
         IpcMessage::OpenSettings {} => {
             info!("Opening settings");
-            let s = state.lock().unwrap();
+            let s = state.lock();
             let services_json =
                 serde_json::to_string(s.service_manager.services()).unwrap_or_else(|_| "[]".into());
             let settings_json = serde_json::to_string(&s.settings).unwrap_or_else(|_| "{}".into());
@@ -309,7 +315,7 @@ pub fn handle_message(state: &SharedState, raw: &str) {
             info!("Opening service picker");
             // Load the picker page in the content area by navigating the current
             // content browser to a data: URI with the picker HTML.
-            let s = state.lock().unwrap();
+            let s = state.lock();
             let recipe_catalog: Vec<serde_json::Value> = s
                 .recipes
                 .values()
@@ -348,7 +354,7 @@ pub fn handle_message(state: &SharedState, raw: &str) {
 
         IpcMessage::ReorderServices { service_ids } => {
             debug!("Reordering services: {service_ids:?}");
-            let mut s = state.lock().unwrap();
+            let mut s = state.lock();
             for (i, id) in service_ids.iter().enumerate() {
                 if let Some(config) = s.service_manager.get_config_mut(id) {
                     config.sort_order = i as i32;
@@ -356,7 +362,10 @@ pub fn handle_message(state: &SharedState, raw: &str) {
             }
             // Persist updated order.
             for svc in s.service_manager.services() {
-                let _ = crate::db::queries::save_service(&s.db, svc);
+                crate::db::warn_on_err(
+                    "save_service",
+                    crate::db::queries::save_service(&s.db, svc),
+                );
             }
             push_sidebar_state(&s);
         }

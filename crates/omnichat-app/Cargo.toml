@@ -27,6 +27,7 @@ dirs-next = { workspace = true }
 open = { workspace = true }
 flate2 = { workspace = true }
 libc = { workspace = true }
+parking_lot = { workspace = true }
 
 # GTK is only used for the Linux taskbar-icon / app-id integration.
 # Keeping it Linux-only lets the workspace compile on macOS/Windows.

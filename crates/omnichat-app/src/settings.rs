@@ -31,38 +31,25 @@ impl AppSettings {
         crate::db::queries::load_all_settings(conn)
     }
 
-    /// Save all settings to the database.
+    /// Save all settings to the database. Errors are logged, not silently dropped.
     pub fn save(&self, conn: &rusqlite::Connection) {
-        let _ = crate::db::queries::save_setting(
-            conn,
-            "show_tray_icon",
-            &self.show_tray_icon.to_string(),
-        );
-        let _ = crate::db::queries::save_setting(
-            conn,
-            "enable_system_tray",
-            &self.enable_system_tray.to_string(),
-        );
-        let _ = crate::db::queries::save_setting(
-            conn,
-            "minimize_to_tray",
-            &self.minimize_to_tray.to_string(),
-        );
-        let _ = crate::db::queries::save_setting(
-            conn,
-            "close_to_tray",
-            &self.close_to_tray.to_string(),
-        );
-        let _ = crate::db::queries::save_setting(
-            conn,
-            "start_minimized",
-            &self.start_minimized.to_string(),
-        );
-        let _ = crate::db::queries::save_setting(conn, "enable_dnd", &self.enable_dnd.to_string());
-        let _ = crate::db::queries::save_setting(
-            conn,
-            "global_hibernation_enabled",
-            &self.global_hibernation_enabled.to_string(),
-        );
+        let kv: [(&str, String); 7] = [
+            ("show_tray_icon", self.show_tray_icon.to_string()),
+            ("enable_system_tray", self.enable_system_tray.to_string()),
+            ("minimize_to_tray", self.minimize_to_tray.to_string()),
+            ("close_to_tray", self.close_to_tray.to_string()),
+            ("start_minimized", self.start_minimized.to_string()),
+            ("enable_dnd", self.enable_dnd.to_string()),
+            (
+                "global_hibernation_enabled",
+                self.global_hibernation_enabled.to_string(),
+            ),
+        ];
+        for (key, value) in &kv {
+            crate::db::warn_on_err(
+                "save_setting",
+                crate::db::queries::save_setting(conn, key, value),
+            );
+        }
     }
 }
