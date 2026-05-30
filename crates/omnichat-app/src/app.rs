@@ -85,7 +85,17 @@ impl AppState {
                 return IpcRole::Sidebar;
             }
         }
+        // The transient picker/settings overlay is our own trusted UI, even
+        // though it lives in the `browsers` map under OVERLAY_ID.
+        if let Some(ob) = self.browsers.get(OVERLAY_ID) {
+            if ob.identifier() == id {
+                return IpcRole::TrustedOverlay;
+            }
+        }
         for (svc_id, b) in &self.browsers {
+            if svc_id == OVERLAY_ID {
+                continue;
+            }
             if b.identifier() == id {
                 return IpcRole::Service(svc_id.clone());
             }
@@ -94,11 +104,17 @@ impl AppState {
     }
 }
 
+/// Reserved key for the transient trusted overlay (picker/settings) in the
+/// `browsers` / `browser_views` maps. Not a real service.
+pub const OVERLAY_ID: &str = "__overlay__";
+
 /// Which surface an IPC message came from — the IPC trust boundary.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IpcRole {
     /// The app's own sidebar browser (fully trusted).
     Sidebar,
+    /// The transient picker/settings overlay (our own trusted UI).
+    TrustedOverlay,
     /// A loaded third-party service webview (untrusted); may only send events
     /// about its own serviceId.
     Service(String),
@@ -562,6 +578,96 @@ pub fn swap_content_view(state: &SharedState, new_service_id: &str) {
     }
 
     info!("Switched to service: {new_service_id}");
+}
+
+/// Show an app-owned trusted page (picker / settings) in a dedicated overlay
+/// BrowserView placed over the content area. The active service's BrowserView is
+/// preserved (only removed from the window, never destroyed), so its live DOM
+/// (e.g. a logged-in session) survives and is restored when the user switches
+/// back. `active_service_id` is intentionally left unchanged.
+pub fn show_overlay(state: &SharedState, html: &str) {
+    let data_uri = format!("data:text/html;base64,{}", base64_encode_str(html));
+
+    // Reuse the overlay browser if it already exists: just navigate + bring forward.
+    let existing = {
+        let s = state.lock();
+        s.browsers.get(OVERLAY_ID).cloned()
+    };
+    if let Some(browser) = existing {
+        if let Some(frame) = browser.main_frame() {
+            let url = CefString::from(data_uri.as_str());
+            frame.load_url(Some(&url));
+        }
+        swap_to_overlay(state);
+        return;
+    }
+
+    // First open: create the overlay BrowserView loading the data: URI.
+    let url = CefString::from(data_uri.as_str());
+    let rc_settings = RequestContextSettings::default();
+    let mut request_context = request_context_create_context(Some(&rc_settings), None);
+    let router = {
+        let s = state.lock();
+        s.message_router.clone()
+    };
+    let mut client = match router {
+        Some(r) => OmniChatClient::new_client(state.clone(), r),
+        None => return,
+    };
+    let mut delegate = ContentBrowserViewDelegate::new();
+    let bv = browser_view_create(
+        Some(&mut client),
+        Some(&url),
+        Some(&BrowserSettings::default()),
+        None,
+        request_context.as_mut(),
+        Some(&mut delegate),
+    );
+    if let Some(ref view) = bv {
+        let mut s = state.lock();
+        s.browser_views.insert(OVERLAY_ID.to_string(), view.clone());
+        // on_after_created maps this to browsers[OVERLAY_ID]; see life_span.
+        s.pending_service_ids.push(OVERLAY_ID.to_string());
+    }
+    swap_to_overlay(state);
+}
+
+/// Swap the overlay view into the content slot, preserving the currently active
+/// service's view. Mirrors swap_content_view's lock discipline (never hold the
+/// state lock across CEF view add/remove).
+fn swap_to_overlay(state: &SharedState) {
+    let (window, old_bv, new_bv, layout, already) = {
+        let s = state.lock();
+        let window = match s.main_window.as_ref() {
+            Some(w) => w.clone(),
+            None => return,
+        };
+        let already = s.displayed_service_id.as_deref() == Some(OVERLAY_ID);
+        let old_bv = s
+            .displayed_service_id
+            .as_ref()
+            .and_then(|id| s.browser_views.get(id).cloned());
+        let new_bv = s.browser_views.get(OVERLAY_ID).cloned();
+        (window, old_bv, new_bv, s.box_layout.clone(), already)
+    };
+    if already {
+        return; // overlay already shown; the load_url above refreshed it
+    }
+
+    if let Some(ref old) = old_bv {
+        let mut old_view = View::from(old);
+        window.remove_child_view(Some(&mut old_view));
+    }
+    if let Some(ref new) = new_bv {
+        let mut new_view = View::from(new);
+        window.add_child_view(Some(&mut new_view));
+        if let Some(ref lay) = layout {
+            lay.set_flex_for_view(Some(&mut new_view), 1);
+        }
+    }
+
+    let mut s = state.lock();
+    s.displayed_service_id = Some(OVERLAY_ID.to_string());
 }
 
 pub fn base64_encode_str(input: &str) -> String {

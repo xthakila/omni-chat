@@ -331,69 +331,41 @@ pub fn handle_message(state: &SharedState, raw: &str, sender_id: Option<i32>) {
 
         IpcMessage::OpenSettings {} => {
             info!("Opening settings");
-            let s = state.lock();
-            let services_json =
-                serde_json::to_string(s.service_manager.services()).unwrap_or_else(|_| "[]".into());
-            let settings_json = serde_json::to_string(&s.settings).unwrap_or_else(|_| "{}".into());
-            let browser = s
-                .displayed_service_id
-                .as_ref()
-                .and_then(|id| s.browsers.get(id))
-                .cloned();
-            drop(s);
-
-            if let Some(browser) = browser {
-                if let Some(frame) = browser.main_frame() {
-                    let html = build_settings_html(&services_json, &settings_json);
-                    let data_uri = format!(
-                        "data:text/html;base64,{}",
-                        crate::app::base64_encode_str(&html)
-                    );
-                    let url = cef::CefString::from(data_uri.as_str());
-                    frame.load_url(Some(&url));
-                }
-            }
+            let (services_json, settings_json) = {
+                let s = state.lock();
+                let sorted = s.service_manager.sorted_services();
+                (
+                    serde_json::to_string(&sorted).unwrap_or_else(|_| "[]".into()),
+                    serde_json::to_string(&s.settings).unwrap_or_else(|_| "{}".into()),
+                )
+            };
+            // Render in the trusted overlay so the active service's session is
+            // preserved (no logout) and the page is origin-classified as trusted.
+            let html = build_settings_html(&services_json, &settings_json);
+            crate::app::show_overlay(state, &html);
         }
 
         IpcMessage::OpenPicker {} => {
             info!("Opening service picker");
-            // Load the picker page in the content area by navigating the current
-            // content browser to a data: URI with the picker HTML.
-            let s = state.lock();
-            let recipe_catalog: Vec<serde_json::Value> = s
-                .recipes
-                .values()
-                .map(|r| {
-                    serde_json::json!({
-                        "id": r.id,
-                        "name": r.name,
-                        "url": r.service_url,
-                        "hasTeamId": r.has_team_id,
+            let recipes_json = {
+                let s = state.lock();
+                let recipe_catalog: Vec<serde_json::Value> = s
+                    .recipes
+                    .values()
+                    .map(|r| {
+                        serde_json::json!({
+                            "id": r.id,
+                            "name": r.name,
+                            "url": r.service_url,
+                            "hasTeamId": r.has_team_id,
+                        })
                     })
-                })
-                .collect();
-            let recipes_json =
-                serde_json::to_string(&recipe_catalog).unwrap_or_else(|_| "[]".into());
-
-            // Find the active content browser and navigate it to the picker.
-            let browser = s
-                .displayed_service_id
-                .as_ref()
-                .and_then(|id| s.browsers.get(id))
-                .cloned();
-            drop(s);
-
-            if let Some(browser) = browser {
-                if let Some(frame) = browser.main_frame() {
-                    let picker_html = build_picker_html(&recipes_json);
-                    let data_uri = format!(
-                        "data:text/html;base64,{}",
-                        crate::app::base64_encode_str(&picker_html)
-                    );
-                    let url = cef::CefString::from(data_uri.as_str());
-                    frame.load_url(Some(&url));
-                }
-            }
+                    .collect();
+                serde_json::to_string(&recipe_catalog).unwrap_or_else(|_| "[]".into())
+            };
+            // Render in the trusted overlay (preserves the active service session).
+            let picker_html = build_picker_html(&recipes_json);
+            crate::app::show_overlay(state, &picker_html);
         }
 
         IpcMessage::ReorderServices { service_ids } => {

@@ -49,8 +49,9 @@ wrap_life_span_handler! {
                 info!("Browser created for service: {id}");
                 state.browsers.insert(id.clone(), browser.clone());
 
-                // If not the active service, hide it.
-                if state.active_service_id.as_ref() != Some(id) {
+                // If not the active service, hide it — but never hide the
+                // trusted overlay (picker/settings), which is shown on demand.
+                if id != crate::app::OVERLAY_ID && state.active_service_id.as_ref() != Some(id) {
                     if let Some(host) = browser.host() {
                         host.was_hidden(1);
                     }
