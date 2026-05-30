@@ -376,12 +376,10 @@ wrap_browser_process_handler! {
                 s.pending_service_ids = first_id;
             }
 
-            // Build the sidebar URL.
-            let sidebar_html = include_str!("../../../resources/sidebar.html");
-            let sidebar_url = format!(
-                "data:text/html;base64,{}",
-                base64_encode_str(sidebar_html)
-            );
+            // Build the sidebar URL (inject the shared Aurora theme).
+            let sidebar_html = with_theme(include_str!("../../../resources/sidebar.html"));
+            let sidebar_url =
+                format!("data:text/html;base64,{}", base64_encode_str(&sidebar_html));
             let sidebar_url = CefString::from(sidebar_url.as_str());
 
             // Create the sidebar BrowserView.
@@ -569,6 +567,15 @@ pub fn swap_content_view(state: &SharedState, new_service_id: &str) {
 pub fn base64_encode_str(input: &str) -> String {
     let encoded = base64_encode(Some(input.as_bytes()));
     CefString::from(&encoded).to_string()
+}
+
+/// The shared Aurora design system, compiled in.
+pub const THEME_CSS: &str = include_str!("../../../resources/theme.css");
+
+/// Inject the shared theme into an app-owned HTML page at the `/*__THEME__*/`
+/// sentinel. Pages without the sentinel are returned unchanged.
+pub fn with_theme(html: &str) -> String {
+    html.replace("/*__THEME__*/", THEME_CSS)
 }
 
 /// Generate a minimal PNG icon (purple O ring on dark background).

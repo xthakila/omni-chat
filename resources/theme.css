@@ -1,0 +1,139 @@
+/* ============================================================================
+   OmniChat "Aurora" design system — the single source of truth for tokens and
+   shared primitives. Injected into every app-owned surface (sidebar, picker,
+   settings, state pages) at the theme-CSS injection sentinel before base64
+   encoding, so all surfaces share one visual language. Self-contained / offline:
+   no CDNs, no web fonts (system stack only).
+   ============================================================================ */
+
+:root {
+    /* ---- primitive ramps ---- */
+    --brand-300: #b6a7ff;
+    --brand-400: #9d8bff;
+    --brand-500: #7c5cff;
+    --brand-600: #6a45f5;
+    --n-0:  #0c0c12;
+    --n-25: #111119;
+    --n-50: #16161f;
+    --n-75: #1c1c27;
+    --n-100:#232331;
+    --n-150:#2c2c3d;
+    --n-200:#383850;
+    --n-400:#6b6b85;
+    --n-500:#8a8aa6;
+    --n-700:#b7b7ce;
+    --n-900:#ececf6;
+
+    /* ---- semantic tokens (dark, default) ---- */
+    --surface-base:    var(--n-0);
+    --surface-sunken:  var(--n-25);
+    --surface-raised:  var(--n-75);
+    --surface-overlay: var(--n-50);
+    --surface-hover:   var(--n-150);
+    --border-subtle:   rgba(236, 236, 246, 0.08);
+    --border-strong:   rgba(236, 236, 246, 0.16);
+    --text-strong:     var(--n-900);
+    --text:            var(--n-700);
+    --text-muted:      var(--n-500);
+    --text-faint:      var(--n-400);
+    --accent:          var(--brand-400);
+    --accent-strong:   var(--brand-500);
+    --accent-contrast: #ffffff;
+    --accent-soft:     rgba(124, 92, 255, 0.18);
+    --danger:          #ff6b81;
+    --danger-soft:     rgba(255, 107, 129, 0.16);
+    --success:         #4fd08a;
+    --warning:         #ffc24b;
+    --focus-ring:      var(--brand-300);
+
+    /* ---- type scale ---- */
+    --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    --fs-11: 11px; --fs-12: 12px; --fs-13: 13px; --fs-14: 14px;
+    --fs-16: 16px; --fs-18: 18px; --fs-22: 22px; --fs-28: 28px;
+
+    /* ---- spacing (4px grid) ---- */
+    --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px;
+    --sp-5: 20px; --sp-6: 24px; --sp-8: 32px; --sp-10: 40px;
+
+    /* ---- radius / elevation / motion ---- */
+    --r-sm: 7px; --r-md: 11px; --r-lg: 16px; --r-xl: 22px; --r-pill: 999px;
+    --elev-1: 0 1px 2px rgba(0,0,0,.35);
+    --elev-2: 0 8px 24px -10px rgba(0,0,0,.55);
+    --elev-3: 0 16px 48px -16px rgba(0,0,0,.65);
+    --motion-fast: 110ms;
+    --motion: 170ms;
+    --motion-slow: 260ms;
+    --ease: cubic-bezier(.2, 0, 0, 1);
+}
+
+/* Light theme — auto from the OS unless an explicit [data-theme] overrides it. */
+@media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+        --surface-base:    #f5f5fb;
+        --surface-sunken:  #eeeef6;
+        --surface-raised:  #ffffff;
+        --surface-overlay: #ffffff;
+        --surface-hover:   #e9e9f3;
+        --border-subtle:   rgba(20, 20, 45, 0.10);
+        --border-strong:   rgba(20, 20, 45, 0.18);
+        --text-strong:     #15151f;
+        --text:            #34344a;
+        --text-muted:      #5d5d76;
+        --text-faint:      #8585a0;
+        --accent:          var(--brand-600);
+        --accent-strong:   var(--brand-600);
+        --accent-contrast: #ffffff;
+        --accent-soft:     rgba(106, 69, 245, 0.12);
+        --elev-2: 0 8px 24px -12px rgba(40, 40, 90, 0.30);
+        --elev-3: 0 16px 48px -18px rgba(40, 40, 90, 0.35);
+    }
+}
+[data-theme="light"] {
+    --surface-base:    #f5f5fb;
+    --surface-sunken:  #eeeef6;
+    --surface-raised:  #ffffff;
+    --surface-overlay: #ffffff;
+    --surface-hover:   #e9e9f3;
+    --border-subtle:   rgba(20, 20, 45, 0.10);
+    --border-strong:   rgba(20, 20, 45, 0.18);
+    --text-strong:     #15151f;
+    --text:            #34344a;
+    --text-muted:      #5d5d76;
+    --text-faint:      #8585a0;
+    --accent:          var(--brand-600);
+    --accent-strong:   var(--brand-600);
+    --accent-soft:     rgba(106, 69, 245, 0.12);
+    --elev-2: 0 8px 24px -12px rgba(40, 40, 90, 0.30);
+    --elev-3: 0 16px 48px -18px rgba(40, 40, 90, 0.35);
+}
+
+/* ---- shared primitives reused across surfaces ---- */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+*:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; border-radius: var(--r-sm); }
+
+.btn {
+    font-family: var(--font);
+    font-size: var(--fs-13);
+    font-weight: 600;
+    border: 1px solid transparent;
+    border-radius: var(--r-md);
+    padding: var(--sp-2) var(--sp-4);
+    cursor: pointer;
+    transition: background var(--motion-fast) var(--ease), color var(--motion-fast) var(--ease),
+                border-color var(--motion-fast) var(--ease), transform var(--motion-fast) var(--ease);
+}
+.btn:active { transform: translateY(1px); }
+.btn-primary { background: var(--accent); color: var(--accent-contrast); }
+.btn-primary:hover { background: var(--accent-strong); }
+.btn-ghost { background: transparent; color: var(--text); border-color: var(--border-strong); }
+.btn-ghost:hover { background: var(--surface-hover); color: var(--text-strong); }
+.btn-danger { background: var(--danger-soft); color: var(--danger); }
+
+.scroll { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+.scroll::-webkit-scrollbar { width: 9px; height: 9px; }
+.scroll::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: var(--r-pill); border: 2px solid transparent; background-clip: content-box; }
+.scroll::-webkit-scrollbar-thumb:hover { background: var(--text-faint); background-clip: content-box; }
+
+@media (prefers-reduced-motion: reduce) {
+    * { transition-duration: 1ms !important; animation-duration: 1ms !important; }
+}

@@ -1,36 +1,35 @@
 <!DOCTYPE html>
-<html lang="en">
+<!-- The rail is always dark "chrome" (like Slack/Discord/VS Code), independent
+     of the OS light/dark preference. data-theme=dark suppresses theme.css's
+     prefers-color-scheme light override. -->
+<html lang="en" data-theme="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>OmniChat Sidebar</title>
     <style>
+        /*__THEME__*/
+        /* Sidebar-local aliases: legacy names -> Aurora semantic tokens, so the
+           rules below read cleanly while the palette comes from the shared theme. */
         :root {
-            --bg: #1e1e2e;
-            --bg-surface: #313244;
-            --bg-hover: #45475a;
-            --bg-active: #585b70;
-            --accent: #cba6f7;
-            --accent-dim: rgba(203,166,247,0.15);
-            --text: #cdd6f4;
-            --text-dim: #6c7086;
-            --red: #f38ba8;
-            --green: #a6e3a1;
-            --peach: #fab387;
-            --blue: #89b4fa;
-            --pink: #f5c2e7;
-            --mauve: #cba6f7;
-            --teal: #94e2d5;
-            --yellow: #f9e2af;
-            --border: rgba(205,214,244,0.06);
-            --pill-w: 4px;
+            --bg: var(--surface-base);
+            --bg-surface: var(--surface-raised);
+            --bg-hover: var(--surface-hover);
+            --bg-active: var(--surface-hover);
+            --accent-dim: var(--accent-soft);
+            --text-dim: var(--text-muted);
+            --red: var(--danger);
+            --green: var(--success);
+            --peach: #ffb37a; --blue: #58a6ff; --pink: #ff9ad1;
+            --mauve: var(--brand-400); --teal: #52d6c4; --yellow: #ffd34d;
+            --border: var(--border-subtle);
+            --pill-w: 3px;
         }
-        * { margin: 0; padding: 0; box-sizing: border-box; }
         html, body { height: 100%; overflow: hidden; }
         body {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            font-family: var(--font);
             background: var(--bg);
-            color: var(--text);
+            color: var(--text-strong);
             display: flex;
             flex-direction: column;
             user-select: none;
@@ -45,16 +44,17 @@
             justify-content: center;
         }
         .logo {
-            width: 42px; height: 42px;
-            border-radius: 16px;
-            background: linear-gradient(135deg, var(--mauve), var(--blue));
+            width: 44px; height: 44px;
+            border-radius: 14px;
+            background: linear-gradient(140deg, var(--brand-400), var(--brand-600));
             display: flex; align-items: center; justify-content: center;
-            font-size: 20px; font-weight: 800; color: var(--bg);
+            font-size: 21px; font-weight: 800; color: #fff;
             letter-spacing: -0.5px;
-            transition: border-radius 0.2s cubic-bezier(.4,0,.2,1);
+            box-shadow: var(--elev-1), inset 0 0 0 1px rgba(255,255,255,.07);
+            transition: border-radius var(--motion) var(--ease), transform var(--motion) var(--ease);
             cursor: default;
         }
-        .logo:hover { border-radius: 12px; }
+        .logo:hover { border-radius: 18px; transform: translateY(-1px); }
 
         .divider {
             width: 32px; height: 2px; margin: 4px auto 8px;
@@ -180,14 +180,14 @@
             color: var(--text-dim);
             font-size: 20px;
         }
-        .footer-btn:hover {
-            border-radius: 16px;
-            background: var(--green);
-            color: var(--bg);
+        .footer-btn:hover { border-radius: 14px; }
+        .footer-btn.add:hover {
+            background: var(--accent);
+            color: var(--accent-contrast);
         }
         .footer-btn.settings:hover {
             background: var(--bg-hover);
-            color: var(--text);
+            color: var(--text-strong);
         }
         .footer-btn svg {
             width: 20px; height: 20px;
@@ -205,6 +205,17 @@
             pointer-events: none;
         }
         body.show-kbd .svc-kbd { opacity: 0.6; }
+
+        /* Empty state — shown when no services are configured yet. */
+        .empty-hint {
+            display: none;
+            flex-direction: column; align-items: center; gap: 5px;
+            padding: 10px 6px 2px; text-align: center; color: var(--text-faint);
+        }
+        body.no-services .empty-hint { display: flex; }
+        .empty-hint .txt { font-size: 9px; line-height: 1.25; font-weight: 700; letter-spacing: .04em; }
+        .empty-hint .arrow { font-size: 17px; opacity: .7; animation: bob 1.6s var(--ease) infinite; }
+        @keyframes bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(3px); } }
 
         /* --- Service Picker Overlay --- */
         .picker-overlay {
@@ -336,6 +347,10 @@
     </div>
     <div class="divider"></div>
     <div class="services-list" id="servicesList"></div>
+    <div class="empty-hint" id="emptyHint">
+        <span class="txt">No apps<br>yet</span>
+        <span class="arrow">↓</span>
+    </div>
     <div class="sidebar-footer">
         <div class="divider-bottom"></div>
         <button class="footer-btn add" id="addBtn" title="Add service">
@@ -413,6 +428,7 @@
         function render() {
             var list = document.getElementById('servicesList');
             while (list.firstChild) list.removeChild(list.firstChild);
+            document.body.classList.toggle('no-services', services.length === 0);
 
             services.forEach(function(svc, idx) {
                 var wrapper = document.createElement('div');
