@@ -117,12 +117,27 @@ wrap_load_handler! {
 
             if let Some(frame) = frame {
                 if frame.is_main() == 1 {
-                    let html = format!(
-                        r#"<html><body style="font-family:system-ui;padding:40px;background:#1a1a2e;color:#eee">
-                        <h2>Failed to load</h2><p>{failed_url}</p>
-                        <p>Check your network connection and try again.</p>
-                        </body></html>"#
-                    );
+                    // Escape the URL (reflected into HTML) and inject the theme via
+                    // placeholders — NOT format!, since theme.css contains { } braces.
+                    let safe_url = failed_url
+                        .replace('&', "&amp;")
+                        .replace('<', "&lt;")
+                        .replace('>', "&gt;");
+                    let tpl = r#"<!DOCTYPE html><html data-theme="dark"><head><meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline';">
+<style>
+/*__THEME__*/
+body{font-family:var(--font);background:var(--surface-base);color:var(--text-strong);height:100vh;margin:0;display:flex;align-items:center;justify-content:center;-webkit-font-smoothing:antialiased}
+.e{text-align:center;max-width:460px;padding:40px}
+.ico{font-size:42px;margin-bottom:14px}
+h2{font-size:20px;font-weight:700;margin-bottom:8px}
+p{color:var(--text-muted);font-size:14px;line-height:1.5;margin:0 0 6px}
+.u{color:var(--text-faint);font-size:12px;margin-top:10px;word-break:break-all}
+</style></head><body><div class="e"><div class="ico">&#9888;&#65039;</div>
+<h2>Couldn't load this service</h2>
+<p>Check your network connection and try again.</p>
+<p class="u">__URL__</p></div></body></html>"#;
+                    let html = crate::app::with_theme(&tpl.replace("__URL__", &safe_url));
                     let data_uri = format!(
                         "data:text/html;base64,{}",
                         crate::app::base64_encode_str(&html)

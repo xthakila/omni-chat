@@ -426,11 +426,26 @@ wrap_browser_process_handler! {
                 drop(s);
                 url
             } else {
-                let welcome = r#"<html><head><title>OmniChat</title></head>
-                    <body style="font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#1a1a2e;color:#eee">
-                    <div style="text-align:center"><h1>Welcome to OmniChat</h1><p>Add a service to get started.</p></div>
-                    </body></html>"#;
-                format!("data:text/html;base64,{}", base64_encode_str(welcome))
+                let welcome = r#"<!DOCTYPE html><html data-theme="dark"><head><meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:;">
+<style>
+/*__THEME__*/
+body{font-family:var(--font);background:var(--surface-base);color:var(--text-strong);height:100vh;margin:0;display:flex;align-items:center;justify-content:center;-webkit-font-smoothing:antialiased}
+.w{text-align:center;max-width:440px;padding:40px}
+.logo{width:76px;height:76px;border-radius:22px;margin:0 auto 26px;background:linear-gradient(140deg,var(--brand-400),var(--brand-600));display:flex;align-items:center;justify-content:center;font-size:38px;font-weight:800;color:#fff;box-shadow:var(--elev-2)}
+h1{font-size:27px;font-weight:700;margin-bottom:10px;letter-spacing:-.01em}
+p{color:var(--text-muted);font-size:15px;line-height:1.55;margin:0 0 6px}
+.hint{margin-top:24px;color:var(--text-faint);font-size:13px}
+.kbd{display:inline-block;background:var(--surface-raised);border:1px solid var(--border-strong);border-radius:6px;padding:1px 9px;font-weight:700;color:var(--accent)}
+</style></head>
+<body><div class="w"><div class="logo">O</div><h1>Welcome to OmniChat</h1>
+<p>All your messaging apps in one lightweight window.</p>
+<p class="hint">Click <span class="kbd">+</span> in the sidebar to add your first service.</p>
+</div></body></html>"#;
+                format!(
+                    "data:text/html;base64,{}",
+                    base64_encode_str(&with_theme(welcome))
+                )
             };
             let content_url = CefString::from(content_url.as_str());
 
