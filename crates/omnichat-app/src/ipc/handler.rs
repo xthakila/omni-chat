@@ -32,7 +32,7 @@ impl OmniChatQueryHandler {
 impl BrowserSideHandler for OmniChatQueryHandler {
     fn on_query_str(
         &self,
-        _browser: Option<Browser>,
+        browser: Option<Browser>,
         _frame: Option<Frame>,
         _query_id: i64,
         request: &str,
@@ -40,7 +40,8 @@ impl BrowserSideHandler for OmniChatQueryHandler {
         callback: Arc<Mutex<dyn BrowserSideCallback>>,
     ) -> bool {
         info!("IPC received: {}", &request[..request.len().min(100)]);
-        handle_message(&self.state, request);
+        let sender_id = browser.as_ref().map(|b| b.identifier());
+        handle_message(&self.state, request, sender_id);
         if let Ok(cb) = callback.lock() {
             cb.success_str("");
         }
@@ -149,7 +150,7 @@ pub enum IpcMessage {
 }
 
 /// Handle an IPC message from a service webview.
-pub fn handle_message(state: &SharedState, raw: &str) {
+pub fn handle_message(state: &SharedState, raw: &str, sender_id: Option<i32>) {
     let msg: IpcMessage = match serde_json::from_str(raw) {
         Ok(m) => m,
         Err(e) => {
@@ -157,6 +158,13 @@ pub fn handle_message(state: &SharedState, raw: &str) {
             return;
         }
     };
+
+    // Classify the sender (trust boundary). Phase 2c: log only, no enforcement
+    // yet — enforcement is gated on the Phase 2e trusted-UI relocation so that
+    // picker/settings (currently rendered in a service browser) are not wrongly
+    // classified Service. The lock is released before the match arms re-lock.
+    let role = state.lock().ipc_role(sender_id);
+    debug!("IPC from {role:?}: {}", &raw[..raw.len().min(60)]);
 
     match msg {
         IpcMessage::Badge {

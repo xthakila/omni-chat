@@ -11,7 +11,7 @@ wrap_request_handler! {
     impl RequestHandler {
         fn on_before_browse(
             &self,
-            _browser: Option<&mut Browser>,
+            browser: Option<&mut Browser>,
             _frame: Option<&mut Frame>,
             request: Option<&mut Request>,
             _user_gesture: i32,
@@ -25,10 +25,14 @@ wrap_request_handler! {
                 let encoded = url.trim_start_matches("omnichat-ipc://");
                 if let Ok(json) = urlparse_decode(encoded) {
                     info!("IPC via URL scheme: {}", &json[..json.len().min(100)]);
+                    // Capture which browser sent this (trust boundary), before
+                    // deferring: a service webview can navigate to omnichat-ipc://
+                    // just like our own pages, so the sender must be classified.
+                    let sender_id = browser.as_deref().map(|b| b.identifier());
                     // IMPORTANT: defer IPC processing via post_task to avoid
                     // re-entrant CEF UI thread operations (deadlock).
                     let state = self.state.clone();
-                    let mut task = IpcTask::new(state, json);
+                    let mut task = IpcTask::new(state, json, sender_id);
                     post_task(ThreadId::UI, Some(&mut task));
                 }
                 return 1; // Cancel navigation.
@@ -59,11 +63,12 @@ wrap_task! {
     struct IpcTask {
         state: SharedState,
         json: String,
+        browser_id: Option<i32>,
     }
 
     impl Task {
         fn execute(&self) {
-            crate::ipc::handler::handle_message(&self.state, &self.json);
+            crate::ipc::handler::handle_message(&self.state, &self.json, self.browser_id);
         }
     }
 }

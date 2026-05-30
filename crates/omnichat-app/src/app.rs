@@ -71,6 +71,39 @@ impl AppState {
             .as_ref()
             .and_then(|id| self.browsers.get(id))
     }
+
+    /// Classify the CEF browser that sent an IPC message, by its `identifier()`.
+    /// This is the trust boundary: privileged commands are only honored from the
+    /// sidebar (our own trusted UI); a third-party service webview is `Service`
+    /// and may only send events about ITS OWN serviceId.
+    pub fn ipc_role(&self, sender_id: Option<i32>) -> IpcRole {
+        let Some(id) = sender_id else {
+            return IpcRole::Unknown;
+        };
+        if let Some(sb) = self.sidebar_browser.as_ref() {
+            if sb.identifier() == id {
+                return IpcRole::Sidebar;
+            }
+        }
+        for (svc_id, b) in &self.browsers {
+            if b.identifier() == id {
+                return IpcRole::Service(svc_id.clone());
+            }
+        }
+        IpcRole::Unknown
+    }
+}
+
+/// Which surface an IPC message came from — the IPC trust boundary.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum IpcRole {
+    /// The app's own sidebar browser (fully trusted).
+    Sidebar,
+    /// A loaded third-party service webview (untrusted); may only send events
+    /// about its own serviceId.
+    Service(String),
+    /// Unrecognized sender — treated as untrusted.
+    Unknown,
 }
 
 pub type SharedState = Arc<Mutex<AppState>>;
