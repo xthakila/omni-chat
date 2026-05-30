@@ -434,8 +434,13 @@ wrap_browser_process_handler! {
             };
             let content_url = CefString::from(content_url.as_str());
 
-            // Create isolated request context for service isolation.
-            let rc_settings = RequestContextSettings::default();
+            // Isolated request context per service — persistent on-disk cache for
+            // a real service (so logins survive restarts), in-memory for the
+            // welcome page when there are no services yet.
+            let rc_settings = match services.first() {
+                Some(svc) => service_rc_settings(&svc.id),
+                None => RequestContextSettings::default(),
+            };
             let mut request_context = request_context_create_context(Some(&rc_settings), None);
 
             let mut content_client = self.client.borrow().clone();
@@ -481,6 +486,36 @@ wrap_browser_process_handler! {
 
 /// Create a new BrowserView for a service and optionally swap it into the window.
 /// This is called from the IPC handler on the CEF UI thread.
+/// Build RequestContextSettings giving a service a persistent on-disk cache
+/// under the global root cache, so cookies/logins survive restarts. The default
+/// settings have an empty cache_path (= in-memory / incognito → re-login every
+/// launch). The path must be a subdirectory of the root_cache_path (main.rs).
+fn service_rc_settings(service_id: &str) -> RequestContextSettings {
+    let mut rc = RequestContextSettings::default();
+    if let Some(dir) = dirs_next::data_dir() {
+        // CEF treats each context cache_path as a profile that must be a DIRECT
+        // child of root_cache_path (cef_cache). Sanitize the id and prefix it.
+        let safe: String = service_id
+            .chars()
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                    c
+                } else {
+                    '_'
+                }
+            })
+            .collect();
+        let svc_cache = dir
+            .join("omnichat")
+            .join("cef_cache")
+            .join(format!("profile-{safe}"));
+        std::fs::create_dir_all(&svc_cache).ok();
+        rc.cache_path = CefString::from(svc_cache.to_string_lossy().as_ref());
+        rc.persist_session_cookies = 1;
+    }
+    rc
+}
+
 pub fn create_service_browser_view(state: &SharedState, service_id: &str) -> Option<BrowserView> {
     let s = state.lock();
     let svc = s.service_manager.get_config(service_id)?.clone();
@@ -493,7 +528,7 @@ pub fn create_service_browser_view(state: &SharedState, service_id: &str) -> Opt
     drop(s);
 
     let url = CefString::from(url.as_str());
-    let rc_settings = RequestContextSettings::default();
+    let rc_settings = service_rc_settings(service_id);
     let mut request_context = request_context_create_context(Some(&rc_settings), None);
 
     // Create a client for this service.
