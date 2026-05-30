@@ -42,6 +42,12 @@ strip "$INSTALL_DIR/omnichat" 2>/dev/null || true
 strip "$INSTALL_DIR/omnichat_helper" 2>/dev/null || true
 chmod +x "$INSTALL_DIR/omnichat" "$INSTALL_DIR/omnichat_helper"
 
+# Install the uninstaller alongside the binaries so removal is one command.
+if [ -f "$SCRIPT_DIR/uninstall.sh" ]; then
+    cp "$SCRIPT_DIR/uninstall.sh" "$INSTALL_DIR/uninstall.sh"
+    chmod +x "$INSTALL_DIR/uninstall.sh"
+fi
+
 echo "2. Installing recipes..."
 if [ -d "$SCRIPT_DIR/recipes" ]; then
     cp -r "$SCRIPT_DIR/recipes" "$INSTALL_DIR/recipes"
@@ -108,9 +114,13 @@ StartupWMClass=omnichat
 StartupNotify=true
 DESKTOP
 
-# CEF may report different app_ids; create symlinks to cover all cases
-for name in chromium cef OmniChat Omnichat; do
-    ln -sf "$APP_DIR/omnichat.desktop" "$APP_DIR/$name.desktop" 2>/dev/null
+# Clean up legacy alias .desktop files from older installers that created
+# chromium/cef/OmniChat/Omnichat symlinks. Those produced duplicate launcher
+# entries ("5 installs") and the chromium alias could shadow the system Chromium
+# launcher. The Wayland app_id is now set in-code via --class=omnichat
+# (see main.rs) and matched on X11 via StartupWMClass, so no aliases are needed.
+for legacy in chromium cef OmniChat Omnichat; do
+    rm -f "$APP_DIR/$legacy.desktop"
 done
 
 # Update desktop database
@@ -124,4 +134,4 @@ echo "Binary sizes:"
 ls -lh "$INSTALL_DIR/omnichat" "$INSTALL_DIR/omnichat_helper" 2>/dev/null
 echo ""
 echo "To run:  omnichat"
-echo "To uninstall:  rm -rf $INSTALL_DIR $BIN_DIR/omnichat $APP_DIR/omnichat.desktop $ICON_DIR/omnichat.png"
+echo "To uninstall:  $INSTALL_DIR/uninstall.sh   (keeps your data; pass --purge to remove it)"
