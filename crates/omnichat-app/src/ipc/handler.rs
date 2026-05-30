@@ -375,8 +375,12 @@ pub fn handle_message(state: &SharedState, raw: &str, sender_id: Option<i32>) {
                 let s = state.lock();
                 let sorted = s.service_manager.sorted_services();
                 (
-                    serde_json::to_string(&sorted).unwrap_or_else(|_| "[]".into()),
-                    serde_json::to_string(&s.settings).unwrap_or_else(|_| "{}".into()),
+                    crate::app::js_embed(
+                        &serde_json::to_string(&sorted).unwrap_or_else(|_| "[]".into()),
+                    ),
+                    crate::app::js_embed(
+                        &serde_json::to_string(&s.settings).unwrap_or_else(|_| "{}".into()),
+                    ),
                 )
             };
             // Render in the trusted overlay so the active service's session is
@@ -401,7 +405,9 @@ pub fn handle_message(state: &SharedState, raw: &str, sender_id: Option<i32>) {
                         })
                     })
                     .collect();
-                serde_json::to_string(&recipe_catalog).unwrap_or_else(|_| "[]".into())
+                crate::app::js_embed(
+                    &serde_json::to_string(&recipe_catalog).unwrap_or_else(|_| "[]".into()),
+                )
             };
             // Render in the trusted overlay (preserves the active service session).
             let picker_html = build_picker_html(&recipes_json);
@@ -524,7 +530,8 @@ fn push_sidebar_state(state: &crate::app::AppState) {
     // Serialize in display order (sort_order), so reorder is reflected live
     // without a restart.
     let sorted = state.service_manager.sorted_services();
-    let services_json = serde_json::to_string(&sorted).unwrap_or_else(|_| "[]".into());
+    let services_json =
+        crate::app::js_embed(&serde_json::to_string(&sorted).unwrap_or_else(|_| "[]".into()));
     let active_json = state
         .active_service_id
         .as_ref()
@@ -543,7 +550,8 @@ fn push_sidebar_state(state: &crate::app::AppState) {
             );
         }
     }
-    let badges_json = serde_json::to_string(&badges).unwrap_or_else(|_| "{}".into());
+    let badges_json =
+        crate::app::js_embed(&serde_json::to_string(&badges).unwrap_or_else(|_| "{}".into()));
 
     let js = format!(
         "if(window.__omnichat_sidebar) {{ window.__omnichat_sidebar.updateServices({services_json}, {active_json}, {badges_json}); }}"
@@ -557,6 +565,7 @@ fn push_sidebar_state(state: &crate::app::AppState) {
 fn build_settings_html(services_json: &str, settings_json: &str) -> String {
     let template = r#"<!DOCTYPE html>
 <html data-theme="dark"><head><meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: https: http:; font-src data:; connect-src 'none';">
 <style>
 /*__THEME__*/
 :root {{ --bg:var(--surface-base); --sf:var(--surface-raised); --hv:var(--surface-hover); --ac:var(--accent); --tx:var(--text-strong); --dm:var(--text-muted); --rd:var(--danger); }}
@@ -656,6 +665,7 @@ renderServices(); renderSettings();
 fn build_picker_html(recipes_json: &str) -> String {
     let template = r#"<!DOCTYPE html>
 <html data-theme="dark"><head><meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: https: http:; font-src data:; connect-src 'none';">
 <style>
 /*__THEME__*/
 :root {{ --bg:var(--surface-base); --sf:var(--surface-raised); --hv:var(--surface-hover); --ac:var(--accent); --tx:var(--text-strong); --dm:var(--text-muted); --rd:var(--danger); --gn:var(--success); }}

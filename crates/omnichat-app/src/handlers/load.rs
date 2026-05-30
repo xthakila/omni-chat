@@ -273,11 +273,15 @@ wrap_load_handler! {
                 .collect();
             drop(state);
 
-            let services_json = serde_json::to_string(&services).unwrap_or_else(|_| "[]".into());
+            let services_json = crate::app::js_embed(
+                &serde_json::to_string(&services).unwrap_or_else(|_| "[]".into()),
+            );
             let active_json = active_id
                 .map(|id| format!("\"{}\"", id))
                 .unwrap_or_else(|| "null".into());
-            let recipes_json = serde_json::to_string(&recipe_catalog).unwrap_or_else(|_| "[]".into());
+            let recipes_json = crate::app::js_embed(
+                &serde_json::to_string(&recipe_catalog).unwrap_or_else(|_| "[]".into()),
+            );
 
             let js = format!(
                 "if(window.__omnichat_sidebar) {{ \

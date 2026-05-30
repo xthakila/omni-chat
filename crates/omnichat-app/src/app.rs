@@ -718,6 +718,16 @@ pub fn with_theme(html: &str) -> String {
     html.replace("/*__THEME__*/", THEME_CSS)
 }
 
+/// Make a serde_json string safe to embed inside an inline `<script>`. A service
+/// name (which can come from an untrusted recipe) containing `</script>` would
+/// otherwise close the tag and inject markup INTO a trusted app page; and the JS
+/// line/paragraph separators are valid in JSON but break JS string literals.
+pub fn js_embed(json: &str) -> String {
+    json.replace("</", "<\\/")
+        .replace('\u{2028}', "\\u2028")
+        .replace('\u{2029}', "\\u2029")
+}
+
 /// Generate a minimal PNG icon (purple O ring on dark background).
 fn generate_app_icon_png(size: u32) -> Vec<u8> {
     let cx = size as f32 / 2.0;
