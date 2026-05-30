@@ -4,7 +4,7 @@ use log::{debug, info, warn};
 use serde::Deserialize;
 use std::sync::{Arc, Mutex};
 
-use crate::app::SharedState;
+use crate::app::{IpcRole, SharedState};
 use crate::notification;
 use crate::service::config::ServiceConfig;
 use crate::settings::AppSettings;
@@ -159,12 +159,52 @@ pub fn handle_message(state: &SharedState, raw: &str, sender_id: Option<i32>) {
         }
     };
 
-    // Classify the sender (trust boundary). Phase 2c: log only, no enforcement
-    // yet — enforcement is gated on the Phase 2e trusted-UI relocation so that
-    // picker/settings (currently rendered in a service browser) are not wrongly
-    // classified Service. The lock is released before the match arms re-lock.
+    // Classify the sender (trust boundary). The lock is released before the
+    // match arms re-lock (parking_lot is not reentrant).
     let role = state.lock().ipc_role(sender_id);
     debug!("IPC from {role:?}: {}", &raw[..raw.len().min(60)]);
+
+    // Capability gating: privileged commands may only come from our own trusted
+    // UI (sidebar / picker-settings overlay), never from a loaded third-party
+    // service page (which could be malicious or XSS'd).
+    let trusted = matches!(role, IpcRole::Sidebar | IpcRole::TrustedOverlay);
+    let privileged = matches!(
+        msg,
+        IpcMessage::AddService { .. }
+            | IpcMessage::RemoveService { .. }
+            | IpcMessage::ActivateService { .. }
+            | IpcMessage::ReorderServices { .. }
+            | IpcMessage::OpenPicker { .. }
+            | IpcMessage::OpenSettings { .. }
+            | IpcMessage::UpdateSettings { .. }
+            | IpcMessage::SetServiceFlag { .. }
+            | IpcMessage::RenameService { .. }
+    );
+    if privileged && !trusted {
+        warn!(
+            "Rejected privileged IPC from untrusted sender ({role:?}): {}",
+            &raw[..raw.len().min(80)]
+        );
+        return;
+    }
+
+    // A loaded service page may only report events about ITS OWN serviceId, so
+    // it cannot spoof another service's badge/notification/title/avatar.
+    if let IpcRole::Service(sender_sid) = &role {
+        let claimed = match &msg {
+            IpcMessage::Badge { service_id, .. }
+            | IpcMessage::DialogTitle { service_id, .. }
+            | IpcMessage::Avatar { service_id, .. }
+            | IpcMessage::Notification { service_id, .. } => Some(service_id.as_str()),
+            _ => None,
+        };
+        if let Some(c) = claimed {
+            if !c.is_empty() && c != sender_sid {
+                warn!("Service '{sender_sid}' tried to report for '{c}'; rejected");
+                return;
+            }
+        }
+    }
 
     match msg {
         IpcMessage::Badge {
