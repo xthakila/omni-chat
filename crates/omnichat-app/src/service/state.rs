@@ -2,9 +2,10 @@ use serde::{Deserialize, Serialize};
 use std::time::Instant;
 
 /// Lifecycle state for a service webview.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum ServiceLifecycleState {
     /// Fully visible and rendering, JS running, WebSockets alive.
+    #[default]
     Active,
     /// Hidden (`was_hidden(1)`), JS throttled by Chromium, WebSockets alive.
     /// Polling interval extended to 5s.
@@ -13,12 +14,6 @@ pub enum ServiceLifecycleState {
     Frozen,
     /// Browser destroyed, no resources consumed.
     Hibernated,
-}
-
-impl Default for ServiceLifecycleState {
-    fn default() -> Self {
-        Self::Active
-    }
 }
 
 /// Runtime state for a service (not persisted).

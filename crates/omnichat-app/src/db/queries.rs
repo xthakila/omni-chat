@@ -122,3 +122,75 @@ pub fn load_all_settings(conn: &Connection) -> AppSettings {
 
     settings
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::service::config::ServiceConfig;
+
+    fn mem() -> Connection {
+        let c = Connection::open_in_memory().unwrap();
+        crate::db::schema::create_tables(&c).unwrap();
+        c
+    }
+
+    #[test]
+    fn service_save_load_roundtrip() {
+        let c = mem();
+        let mut svc = ServiceConfig::new("s1".into(), "slack".into(), "Work".into());
+        svc.team = Some("acme".into());
+        svc.is_muted = true;
+        svc.sort_order = 2;
+        save_service(&c, &svc).unwrap();
+        let loaded = load_services(&c).unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].id, "s1");
+        assert_eq!(loaded[0].team.as_deref(), Some("acme"));
+        assert!(loaded[0].is_muted);
+        assert_eq!(loaded[0].sort_order, 2);
+    }
+
+    #[test]
+    fn service_upsert_updates_in_place() {
+        let c = mem();
+        let mut svc = ServiceConfig::new("s1".into(), "slack".into(), "Work".into());
+        save_service(&c, &svc).unwrap();
+        svc.name = "Renamed".into();
+        save_service(&c, &svc).unwrap();
+        let loaded = load_services(&c).unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].name, "Renamed");
+    }
+
+    #[test]
+    fn services_returned_in_sort_order() {
+        let c = mem();
+        for (id, ord) in [("b", 2), ("a", 0), ("c", 1)] {
+            let mut s = ServiceConfig::new(id.into(), "r".into(), "n".into());
+            s.sort_order = ord;
+            save_service(&c, &s).unwrap();
+        }
+        let ids: Vec<_> = load_services(&c)
+            .unwrap()
+            .iter()
+            .map(|s| s.id.clone())
+            .collect();
+        assert_eq!(ids, vec!["a", "c", "b"]);
+    }
+
+    #[test]
+    fn delete_service_removes_row() {
+        let c = mem();
+        let svc = ServiceConfig::new("s1".into(), "slack".into(), "Work".into());
+        save_service(&c, &svc).unwrap();
+        delete_service(&c, "s1").unwrap();
+        assert_eq!(load_services(&c).unwrap().len(), 0);
+    }
+
+    #[test]
+    fn settings_roundtrip() {
+        let c = mem();
+        save_setting(&c, "enable_dnd", "true").unwrap();
+        assert!(load_all_settings(&c).enable_dnd);
+    }
+}

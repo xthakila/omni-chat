@@ -99,3 +99,33 @@ fn urlparse_decode(encoded: &str) -> Result<String, std::string::FromUtf8Error> 
     }
     String::from_utf8(bytes)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::urlparse_decode;
+
+    #[test]
+    fn decodes_percent_encoded_json() {
+        // What the JS sendIPC produces: encodeURIComponent(JSON.stringify(...)).
+        let encoded = "%7B%22type%22%3A%22open_picker%22%7D";
+        assert_eq!(
+            urlparse_decode(encoded).unwrap(),
+            r#"{"type":"open_picker"}"#
+        );
+    }
+
+    #[test]
+    fn plus_becomes_space() {
+        assert_eq!(urlparse_decode("a+b").unwrap(), "a b");
+    }
+
+    #[test]
+    fn passes_through_plain_text() {
+        assert_eq!(urlparse_decode("hello").unwrap(), "hello");
+    }
+
+    #[test]
+    fn handles_unicode_escape() {
+        assert_eq!(urlparse_decode("%E2%9C%93").unwrap(), "✓");
+    }
+}

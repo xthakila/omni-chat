@@ -763,3 +763,89 @@ render('');
         .replace("{recipes}", recipes_json)
         .replace("{count}", &count.to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn url_allowlist_accepts_web_and_mail() {
+        assert!(is_allowed_url("https://example.com/x"));
+        assert!(is_allowed_url("http://example.com"));
+        assert!(is_allowed_url("mailto:a@b.com"));
+        assert!(is_allowed_url("  HTTPS://EXAMPLE.com ")); // trimmed + case-insensitive
+    }
+
+    #[test]
+    fn url_allowlist_rejects_dangerous_schemes() {
+        assert!(!is_allowed_url("file:///etc/passwd"));
+        assert!(!is_allowed_url("javascript:alert(1)"));
+        assert!(!is_allowed_url("data:text/html,x"));
+        assert!(!is_allowed_url("sudo://x"));
+        assert!(!is_allowed_url(""));
+    }
+
+    #[test]
+    fn parses_badge_from_service() {
+        let m: IpcMessage =
+            serde_json::from_str(r#"{"type":"badge","serviceId":"s1","direct":3,"indirect":0}"#)
+                .unwrap();
+        match m {
+            IpcMessage::Badge {
+                service_id, direct, ..
+            } => {
+                assert_eq!(service_id, "s1");
+                assert_eq!(direct, 3);
+            }
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    #[test]
+    fn parses_add_service_with_optional_team() {
+        let m: IpcMessage = serde_json::from_str(
+            r#"{"type":"add_service","recipeId":"slack","name":"Work","team":"acme"}"#,
+        )
+        .unwrap();
+        match m {
+            IpcMessage::AddService {
+                recipe_id,
+                name,
+                team,
+                ..
+            } => {
+                assert_eq!(recipe_id, "slack");
+                assert_eq!(name, "Work");
+                assert_eq!(team.as_deref(), Some("acme"));
+            }
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    #[test]
+    fn parses_new_persistence_variants() {
+        assert!(matches!(
+            serde_json::from_str::<IpcMessage>(
+                r#"{"type":"set_service_flag","serviceId":"s1","flag":"muted","value":true}"#
+            )
+            .unwrap(),
+            IpcMessage::SetServiceFlag { .. }
+        ));
+        assert!(matches!(
+            serde_json::from_str::<IpcMessage>(
+                r#"{"type":"rename_service","serviceId":"s1","name":"X"}"#
+            )
+            .unwrap(),
+            IpcMessage::RenameService { .. }
+        ));
+        assert!(matches!(
+            serde_json::from_str::<IpcMessage>(r#"{"type":"open_picker"}"#).unwrap(),
+            IpcMessage::OpenPicker {}
+        ));
+    }
+
+    #[test]
+    fn rejects_unknown_message_type() {
+        assert!(serde_json::from_str::<IpcMessage>(r#"{"type":"definitely_not_real"}"#).is_err());
+    }
+}

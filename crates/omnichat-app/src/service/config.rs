@@ -62,7 +62,7 @@ impl ServiceConfig {
         format!("https://{}.com", self.recipe_id)
     }
 
-    /// Returns the URL resolved against a recipe's service_url with {teamId} substitution.
+    /// Returns the URL resolved against a recipe's service_url with `{teamId}` substitution.
     pub fn effective_url_with_recipe(&self, recipe_service_url: &str) -> String {
         // 1. Custom URL always wins.
         if let Some(ref url) = self.custom_url {
@@ -84,5 +84,59 @@ impl ServiceConfig {
 
         // 3. Final fallback.
         self.effective_url()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn svc(recipe: &str) -> ServiceConfig {
+        ServiceConfig::new("id1".into(), recipe.into(), "Name".into())
+    }
+
+    #[test]
+    fn custom_url_wins_over_recipe() {
+        let mut s = svc("slack");
+        s.custom_url = Some("https://custom.example".into());
+        assert_eq!(
+            s.effective_url_with_recipe("https://{teamId}.slack.com"),
+            "https://custom.example"
+        );
+    }
+
+    #[test]
+    fn team_id_substituted_when_present() {
+        let mut s = svc("slack");
+        s.team = Some("acme".into());
+        assert_eq!(
+            s.effective_url_with_recipe("https://{teamId}.slack.com"),
+            "https://acme.slack.com"
+        );
+    }
+
+    #[test]
+    fn team_id_stripped_when_absent() {
+        let s = svc("slack");
+        assert_eq!(
+            s.effective_url_with_recipe("https://{teamId}.slack.com"),
+            "https://.slack.com"
+        );
+    }
+
+    #[test]
+    fn falls_back_to_recipe_dot_com_when_no_url() {
+        let s = svc("whatsapp");
+        assert_eq!(s.effective_url_with_recipe(""), "https://whatsapp.com");
+    }
+
+    #[test]
+    fn empty_custom_url_does_not_win() {
+        let mut s = svc("slack");
+        s.custom_url = Some(String::new());
+        assert_eq!(
+            s.effective_url_with_recipe("https://web.slack.com"),
+            "https://web.slack.com"
+        );
     }
 }
