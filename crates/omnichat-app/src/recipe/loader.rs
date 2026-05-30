@@ -111,20 +111,14 @@ fn load_recipe(dir: &Path) -> Result<Recipe, String> {
         .ok_or("No id or name")?
         .to_string();
 
-    let name = pkg["name"]
-        .as_str()
-        .unwrap_or(&id)
-        .to_string();
+    let name = pkg["name"].as_str().unwrap_or(&id).to_string();
 
     let version = pkg["version"].as_str().unwrap_or("0.0.0").to_string();
     let description = pkg["description"].as_str().unwrap_or("").to_string();
 
     let config = &pkg["config"];
 
-    let service_url = config["serviceURL"]
-        .as_str()
-        .unwrap_or("")
-        .to_string();
+    let service_url = config["serviceURL"].as_str().unwrap_or("").to_string();
 
     let has_direct_messages = config["hasDirectMessages"].as_bool().unwrap_or(true);
     let has_indirect_messages = config["hasIndirectMessages"].as_bool().unwrap_or(false);

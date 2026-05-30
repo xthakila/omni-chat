@@ -13,8 +13,33 @@ mod tray;
 
 use cef::*;
 use log::{error, info};
+use std::sync::OnceLock;
+use std::time::Instant;
+
+/// Process start time, set as early as possible in the browser process.
+pub static APP_START: OnceLock<Instant> = OnceLock::new();
+
+/// Log time-to-first-paint exactly once, only when `OMNICHAT_TIMING` is set.
+/// Called from the sidebar load handler; negligible overhead and a no-op by default.
+pub fn record_first_paint(what: &str) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static DONE: AtomicBool = AtomicBool::new(false);
+    if std::env::var_os("OMNICHAT_TIMING").is_none() {
+        return;
+    }
+    if DONE.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    if let Some(start) = APP_START.get() {
+        info!(
+            "[timing] first paint ({what}) at {} ms",
+            start.elapsed().as_millis()
+        );
+    }
+}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let _ = APP_START.set(Instant::now());
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     // --- Single instance check ---
@@ -36,12 +61,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     std::fs::write(&pid_file, std::process::id().to_string()).ok();
 
     // Set program name — GNOME uses this to match .desktop files for taskbar icons.
-    gtk::glib::set_prgname(Some("omnichat"));
-    gtk::glib::set_application_name("OmniChat");
-
-    // Set the default window icon for all GTK windows.
+    // GTK is Linux-only; ALL gtk/glib calls must be gated or mac/win cannot compile.
     #[cfg(target_os = "linux")]
     {
+        gtk::glib::set_prgname(Some("omnichat"));
+        gtk::glib::set_application_name("OmniChat");
+
+        // Set the default window icon for all GTK windows.
         if gtk::init().is_ok() {
             gtk::Window::set_default_icon_name("omnichat");
         }
@@ -159,6 +185,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // Re-set prgname after CEF init (CEF may override it during initialize).
+    #[cfg(target_os = "linux")]
     gtk::glib::set_prgname(Some("omnichat"));
 
     // Initialize the system tray icon.

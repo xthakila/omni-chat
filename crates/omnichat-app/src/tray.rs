@@ -30,17 +30,23 @@ fn generate_icon(badge: u32) -> Icon {
             if dist <= outer_r && dist >= inner_r {
                 // Gradient from mauve (#cba6f7) to blue (#89b4fa)
                 let t = (dist - inner_r) / (outer_r - inner_r);
-                rgba[idx] = (137.0 + t * 66.0) as u8;     // 137 → 203
-                rgba[idx + 1] = (180.0 - t * 14.0) as u8;  // 180 → 166
-                rgba[idx + 2] = (250.0 - t * 3.0) as u8;   // 250 → 247
+                rgba[idx] = (137.0 + t * 66.0) as u8; // 137 → 203
+                rgba[idx + 1] = (180.0 - t * 14.0) as u8; // 180 → 166
+                rgba[idx + 2] = (250.0 - t * 3.0) as u8; // 250 → 247
                 rgba[idx + 3] = 255;
             } else if dist > outer_r && dist <= outer_r + 0.8 {
                 // Anti-alias
                 let a = ((outer_r + 0.8 - dist) / 0.8 * 255.0) as u8;
-                rgba[idx] = 203; rgba[idx + 1] = 166; rgba[idx + 2] = 247; rgba[idx + 3] = a;
+                rgba[idx] = 203;
+                rgba[idx + 1] = 166;
+                rgba[idx + 2] = 247;
+                rgba[idx + 3] = a;
             } else if dist < inner_r && dist >= inner_r - 0.8 {
                 let a = ((dist - (inner_r - 0.8)) / 0.8 * 255.0) as u8;
-                rgba[idx] = 137; rgba[idx + 1] = 180; rgba[idx + 2] = 250; rgba[idx + 3] = a;
+                rgba[idx] = 137;
+                rgba[idx + 1] = 180;
+                rgba[idx + 2] = 250;
+                rgba[idx + 3] = a;
             }
         }
     }
@@ -61,11 +67,17 @@ fn generate_icon(badge: u32) -> Icon {
 
                 if d <= br + border {
                     // White border ring
-                    rgba[idx] = 30; rgba[idx + 1] = 30; rgba[idx + 2] = 46; rgba[idx + 3] = 255;
+                    rgba[idx] = 30;
+                    rgba[idx + 1] = 30;
+                    rgba[idx + 2] = 46;
+                    rgba[idx + 3] = 255;
                 }
                 if d <= br {
                     // Red fill (#f38ba8)
-                    rgba[idx] = 243; rgba[idx + 1] = 139; rgba[idx + 2] = 168; rgba[idx + 3] = 255;
+                    rgba[idx] = 243;
+                    rgba[idx + 1] = 139;
+                    rgba[idx + 2] = 168;
+                    rgba[idx + 3] = 255;
                 }
             }
         }
@@ -116,13 +128,11 @@ pub fn init() {
     let quit_id = quit_item.id().clone();
 
     // Menu event handler thread.
-    std::thread::spawn(move || {
-        loop {
-            if let Ok(event) = MenuEvent::receiver().recv() {
-                if event.id == quit_id {
-                    info!("Quit requested from tray");
-                    std::process::exit(0);
-                }
+    std::thread::spawn(move || loop {
+        if let Ok(event) = MenuEvent::receiver().recv() {
+            if event.id == quit_id {
+                info!("Quit requested from tray");
+                std::process::exit(0);
             }
         }
     });

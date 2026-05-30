@@ -102,7 +102,10 @@ pub fn create_app(
 }
 
 pub fn shared_state() -> SharedState {
-    SHARED_STATE.get().expect("AppState not initialized").clone()
+    SHARED_STATE
+        .get()
+        .expect("AppState not initialized")
+        .clone()
 }
 
 // --- Window delegate for the single main window ---
@@ -517,8 +520,10 @@ pub fn swap_content_view(state: &SharedState, new_service_id: &str) {
             s.displayed_service_id = Some(new_service_id.to_string());
         }
         s.active_service_id = Some(new_service_id.to_string());
-        s.service_manager
-            .set_lifecycle_state(new_service_id, crate::service::state::ServiceLifecycleState::Active);
+        s.service_manager.set_lifecycle_state(
+            new_service_id,
+            crate::service::state::ServiceLifecycleState::Active,
+        );
         if let Some(rt) = s.service_manager.get_runtime_mut(new_service_id) {
             rt.touch();
         }

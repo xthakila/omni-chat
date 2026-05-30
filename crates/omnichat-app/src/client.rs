@@ -9,13 +9,7 @@ pub struct OmniChatClient;
 
 impl OmniChatClient {
     pub fn new_client(state: SharedState, router: Arc<BrowserSideRouter>) -> Client {
-        OmniChatServiceClient::new(
-            state.clone(),
-            state.clone(),
-            state.clone(),
-            state,
-            router,
-        )
+        OmniChatServiceClient::new(state.clone(), state.clone(), state.clone(), state, router)
     }
 
     pub fn new_sidebar_client(state: SharedState, router: Arc<BrowserSideRouter>) -> Client {

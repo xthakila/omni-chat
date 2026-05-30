@@ -5,11 +5,7 @@ use std::path::Path;
 const FERDIUM_API_SHIM: &str = include_str!("shim.js");
 
 /// Build composite JS to inject into a service browser on page load.
-pub fn build_injection_js(
-    service_id: &str,
-    service: &ServiceConfig,
-    recipe: &Recipe,
-) -> String {
+pub fn build_injection_js(service_id: &str, service: &ServiceConfig, recipe: &Recipe) -> String {
     let mut js = String::with_capacity(32768);
 
     js.push_str("if(!window.__omnichat_injected){window.__omnichat_injected=true;\n");
@@ -93,11 +89,14 @@ fn recipe_module(
     js.push_str("var exports = module.exports;\n");
     js.push_str(&format!("var __dirname = '{}';\n", dirname));
     js.push_str(&format!("var __filename = '{}/webview.js';\n", dirname));
-    js.push_str("function _interopRequireDefault(o) { return o && o.__esModule ? o : { default: o }; }\n");
+    js.push_str(
+        "function _interopRequireDefault(o) { return o && o.__esModule ? o : { default: o }; }\n",
+    );
     js.push_str("var _fc = ");
     js.push_str(&file_cache);
     js.push_str(";\n");
-    js.push_str(r#"var _pm = {
+    js.push_str(
+        r#"var _pm = {
     join: function() { return [].slice.call(arguments).join('/'); },
     basename: function(p) { return p.split('/').pop(); },
     dirname: function(p) { var x = p.split('/'); x.pop(); return x.join('/'); },
@@ -124,11 +123,13 @@ window.__omnichat_ferdium.injectCSS = function() {
                 var s = document.createElement('style');
                 s.textContent = _fc[fn_];
                 (document.head || document.documentElement).appendChild(s);
-"#);
+"#,
+    );
     js.push_str("            } else { ");
     js.push_str(css_fb);
     js.push_str(" }\n");
-    js.push_str(r#"        } else { _oCSS.call(window.__omnichat_ferdium, a); }
+    js.push_str(
+        r#"        } else { _oCSS.call(window.__omnichat_ferdium, a); }
     });
 };
 window.Ferdium.injectCSS = window.__omnichat_ferdium.injectCSS;
@@ -147,14 +148,17 @@ window.__omnichat_ferdium.injectJSUnsafe = function() {
 };
 window.Ferdium.injectJSUnsafe = window.__omnichat_ferdium.injectJSUnsafe;
 try {
-"#);
+"#,
+    );
     js.push_str(webview_js);
     js.push_str("\nvar rf = module.exports;\n");
     let config_str = config.to_string();
     js.push_str("if (typeof rf === 'function') rf(window.__omnichat_ferdium, ");
     js.push_str(&config_str);
     js.push_str(");\n");
-    js.push_str("else if (rf && typeof rf.default === 'function') rf.default(window.__omnichat_ferdium, ");
+    js.push_str(
+        "else if (rf && typeof rf.default === 'function') rf.default(window.__omnichat_ferdium, ",
+    );
     js.push_str(&config_str);
     js.push_str(");\n");
     js.push_str("} catch(e) { console.error('[OmniChat] Recipe error:', e); }\n");
@@ -165,7 +169,13 @@ try {
 fn file_cache_json(recipe_path: &str) -> String {
     let dir = Path::new(recipe_path);
     let mut m = serde_json::Map::new();
-    for f in &["service.css", "darkmode.css", "webview-unsafe.js", "user.css", "user.js"] {
+    for f in &[
+        "service.css",
+        "darkmode.css",
+        "webview-unsafe.js",
+        "user.css",
+        "user.js",
+    ] {
         let p = dir.join(f);
         if let Ok(c) = std::fs::read_to_string(&p) {
             m.insert(f.to_string(), serde_json::Value::String(c));
@@ -215,7 +225,11 @@ fn notification_patch() -> String {
 }
 
 fn css_injection(css: &str) -> String {
-    let e = css.replace('\\', "\\\\").replace('\'', "\\'").replace('\n', "\\n").replace('\r', "");
+    let e = css
+        .replace('\\', "\\\\")
+        .replace('\'', "\\'")
+        .replace('\n', "\\n")
+        .replace('\r', "");
     let mut r = String::from("(function(){var s=document.createElement('style');s.textContent='");
     r.push_str(&e);
     r.push_str("';(document.head||document.documentElement).appendChild(s);})();\n");
@@ -223,5 +237,9 @@ fn css_injection(css: &str) -> String {
 }
 
 fn js_escape(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('\'', "\\'").replace('"', "\\\"").replace('\n', "\\n").replace('\r', "")
+    s.replace('\\', "\\\\")
+        .replace('\'', "\\'")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "")
 }

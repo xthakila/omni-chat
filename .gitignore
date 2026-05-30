@@ -1,4 +1,4 @@
 /target/
 *.so
-Cargo.lock
+# Cargo.lock is tracked: this is a shipping binary, so we want reproducible builds.
 /recipes/

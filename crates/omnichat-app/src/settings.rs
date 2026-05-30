@@ -33,12 +33,36 @@ impl AppSettings {
 
     /// Save all settings to the database.
     pub fn save(&self, conn: &rusqlite::Connection) {
-        let _ = crate::db::queries::save_setting(conn, "show_tray_icon", &self.show_tray_icon.to_string());
-        let _ = crate::db::queries::save_setting(conn, "enable_system_tray", &self.enable_system_tray.to_string());
-        let _ = crate::db::queries::save_setting(conn, "minimize_to_tray", &self.minimize_to_tray.to_string());
-        let _ = crate::db::queries::save_setting(conn, "close_to_tray", &self.close_to_tray.to_string());
-        let _ = crate::db::queries::save_setting(conn, "start_minimized", &self.start_minimized.to_string());
+        let _ = crate::db::queries::save_setting(
+            conn,
+            "show_tray_icon",
+            &self.show_tray_icon.to_string(),
+        );
+        let _ = crate::db::queries::save_setting(
+            conn,
+            "enable_system_tray",
+            &self.enable_system_tray.to_string(),
+        );
+        let _ = crate::db::queries::save_setting(
+            conn,
+            "minimize_to_tray",
+            &self.minimize_to_tray.to_string(),
+        );
+        let _ = crate::db::queries::save_setting(
+            conn,
+            "close_to_tray",
+            &self.close_to_tray.to_string(),
+        );
+        let _ = crate::db::queries::save_setting(
+            conn,
+            "start_minimized",
+            &self.start_minimized.to_string(),
+        );
         let _ = crate::db::queries::save_setting(conn, "enable_dnd", &self.enable_dnd.to_string());
-        let _ = crate::db::queries::save_setting(conn, "global_hibernation_enabled", &self.global_hibernation_enabled.to_string());
+        let _ = crate::db::queries::save_setting(
+            conn,
+            "global_hibernation_enabled",
+            &self.global_hibernation_enabled.to_string(),
+        );
     }
 }

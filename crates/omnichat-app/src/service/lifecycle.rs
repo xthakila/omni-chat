@@ -2,12 +2,33 @@ use cef::*;
 use log::info;
 use std::time::{Duration, Instant};
 
-use crate::app::SharedState;
 use super::state::ServiceLifecycleState;
+use crate::app::SharedState;
 
-/// Timeout thresholds for lifecycle transitions.
-const FREEZE_AFTER: Duration = Duration::from_secs(5 * 60); // 5 minutes
-const HIBERNATE_AFTER: Duration = Duration::from_secs(15 * 60); // 15 minutes
+/// Timeout thresholds for lifecycle transitions (seconds), env-overridable so
+/// hibernation/freeze can be exercised in seconds during testing/perf work.
+/// Defaults preserve current behavior: freeze after 5 min, hibernate after 15 min.
+fn env_secs(key: &str, default: u64) -> Duration {
+    Duration::from_secs(
+        std::env::var(key)
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(default),
+    )
+}
+fn freeze_after() -> Duration {
+    env_secs("OMNICHAT_FREEZE_SECS", 5 * 60)
+}
+fn hibernate_after() -> Duration {
+    env_secs("OMNICHAT_HIBERNATE_SECS", 15 * 60)
+}
+/// Lifecycle tick cadence (ms), env-overridable. Default 30s.
+fn tick_ms() -> i64 {
+    std::env::var("OMNICHAT_TICK_MS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(30_000)
+}
 
 /// Manages lifecycle transitions for service browsers.
 /// Called periodically from a CEF timer task.
@@ -43,14 +64,16 @@ impl LifecycleManager {
                 }
             };
 
+            let freeze_after = freeze_after();
+            let hibernate_after = hibernate_after();
             let new_state = match current_state {
-                ServiceLifecycleState::Backgrounded if idle_time >= HIBERNATE_AFTER => {
+                ServiceLifecycleState::Backgrounded if idle_time >= hibernate_after => {
                     ServiceLifecycleState::Hibernated
                 }
-                ServiceLifecycleState::Backgrounded if idle_time >= FREEZE_AFTER => {
+                ServiceLifecycleState::Backgrounded if idle_time >= freeze_after => {
                     ServiceLifecycleState::Frozen
                 }
-                ServiceLifecycleState::Frozen if idle_time >= HIBERNATE_AFTER => {
+                ServiceLifecycleState::Frozen if idle_time >= hibernate_after => {
                     ServiceLifecycleState::Hibernated
                 }
                 _ => continue,
@@ -133,9 +156,9 @@ wrap_task! {
 
             LifecycleManager::tick(&self.state);
 
-            // Reschedule every 30 seconds.
+            // Reschedule at the (env-overridable) tick cadence.
             let mut next = LifecycleTickTask::new(self.state.clone());
-            post_delayed_task(ThreadId::UI, Some(&mut next), 30_000);
+            post_delayed_task(ThreadId::UI, Some(&mut next), tick_ms());
         }
     }
 }

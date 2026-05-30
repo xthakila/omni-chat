@@ -25,6 +25,10 @@ env_logger = { workspace = true }
 chrono = { workspace = true }
 dirs-next = { workspace = true }
 open = { workspace = true }
-gtk = { workspace = true }
 flate2 = { workspace = true }
 libc = { workspace = true }
+
+# GTK is only used for the Linux taskbar-icon / app-id integration.
+# Keeping it Linux-only lets the workspace compile on macOS/Windows.
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = { workspace = true }

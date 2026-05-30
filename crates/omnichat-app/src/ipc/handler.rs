@@ -184,11 +184,7 @@ pub fn handle_message(state: &SharedState, raw: &str) {
         IpcMessage::DialogTitle { service_id, title } => {
             debug!("Dialog title: {service_id} = {title}");
             let mut s = state.lock().unwrap();
-            let title_opt = if title.is_empty() {
-                None
-            } else {
-                Some(title)
-            };
+            let title_opt = if title.is_empty() { None } else { Some(title) };
             s.service_manager.set_dialog_title(&service_id, title_opt);
         }
 
@@ -210,8 +206,10 @@ pub fn handle_message(state: &SharedState, raw: &str) {
                 let mut s = state.lock().unwrap();
                 if let Some(ref prev_id) = s.active_service_id.clone() {
                     if prev_id != &service_id {
-                        s.service_manager
-                            .set_lifecycle_state(prev_id, crate::service::state::ServiceLifecycleState::Backgrounded);
+                        s.service_manager.set_lifecycle_state(
+                            prev_id,
+                            crate::service::state::ServiceLifecycleState::Backgrounded,
+                        );
                     }
                 }
             }
@@ -284,7 +282,8 @@ pub fn handle_message(state: &SharedState, raw: &str) {
         IpcMessage::OpenSettings {} => {
             info!("Opening settings");
             let s = state.lock().unwrap();
-            let services_json = serde_json::to_string(s.service_manager.services()).unwrap_or_else(|_| "[]".into());
+            let services_json =
+                serde_json::to_string(s.service_manager.services()).unwrap_or_else(|_| "[]".into());
             let settings_json = serde_json::to_string(&s.settings).unwrap_or_else(|_| "{}".into());
             let browser = s
                 .displayed_service_id
@@ -296,7 +295,10 @@ pub fn handle_message(state: &SharedState, raw: &str) {
             if let Some(browser) = browser {
                 if let Some(frame) = browser.main_frame() {
                     let html = build_settings_html(&services_json, &settings_json);
-                    let data_uri = format!("data:text/html;base64,{}", crate::app::base64_encode_str(&html));
+                    let data_uri = format!(
+                        "data:text/html;base64,{}",
+                        crate::app::base64_encode_str(&html)
+                    );
                     let url = cef::CefString::from(data_uri.as_str());
                     frame.load_url(Some(&url));
                 }
@@ -320,7 +322,8 @@ pub fn handle_message(state: &SharedState, raw: &str) {
                     })
                 })
                 .collect();
-            let recipes_json = serde_json::to_string(&recipe_catalog).unwrap_or_else(|_| "[]".into());
+            let recipes_json =
+                serde_json::to_string(&recipe_catalog).unwrap_or_else(|_| "[]".into());
 
             // Find the active content browser and navigate it to the picker.
             let browser = s

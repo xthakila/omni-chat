@@ -5,6 +5,24 @@ use crate::app::SharedState;
 use crate::recipe;
 use crate::service::state::ServiceLifecycleState;
 
+/// Poll-interval knobs (ms), env-overridable for perf tuning / fast tests.
+/// Defaults preserve current behavior (2s active / 5s background / 10s frozen-check).
+fn env_ms(key: &str, default: i64) -> i64 {
+    std::env::var(key)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(default)
+}
+fn poll_active_ms() -> i64 {
+    env_ms("OMNICHAT_POLL_ACTIVE_MS", 2000)
+}
+fn poll_bg_ms() -> i64 {
+    env_ms("OMNICHAT_POLL_BG_MS", 5000)
+}
+fn poll_frozen_ms() -> i64 {
+    env_ms("OMNICHAT_POLL_FROZEN_MS", 10000)
+}
+
 // --- Service load handler: injects recipe JS on page load ---
 
 wrap_load_handler! {
@@ -127,7 +145,7 @@ fn start_poll_timer(browser: &mut Browser, service_id: &str, state: SharedState)
     let service_id = service_id.to_string();
 
     let mut task = PollTask::new(browser_clone, service_id, state);
-    post_delayed_task(ThreadId::UI, Some(&mut task), 2000);
+    post_delayed_task(ThreadId::UI, Some(&mut task), poll_active_ms());
 }
 
 wrap_task! {
@@ -163,19 +181,19 @@ wrap_task! {
                 ServiceLifecycleState::Active => {
                     // Full-speed polling: execute recipe loop function.
                     self.execute_poll();
-                    // Reschedule at 2s.
-                    self.reschedule(2000);
+                    // Reschedule at the active interval.
+                    self.reschedule(poll_active_ms());
                 }
                 ServiceLifecycleState::Backgrounded => {
                     // Background polling: still execute loop for badge counts and notifications.
                     self.execute_poll();
-                    // Reschedule at 5s (slower).
-                    self.reschedule(5000);
+                    // Reschedule at the (slower) background interval.
+                    self.reschedule(poll_bg_ms());
                 }
                 ServiceLifecycleState::Frozen => {
                     // No polling, but keep the timer alive to check for state changes.
-                    // Check again in 10s in case the service gets unfrozen.
-                    self.reschedule(10000);
+                    // Check again later in case the service gets unfrozen.
+                    self.reschedule(poll_frozen_ms());
                 }
                 ServiceLifecycleState::Hibernated => {
                     // Browser is destroyed, stop polling.
@@ -226,6 +244,9 @@ wrap_load_handler! {
             if frame.is_main() != 1 {
                 return;
             }
+
+            // The sidebar shell finishing load is the app's first meaningful paint.
+            crate::record_first_paint("sidebar");
 
             // Push initial service state + available recipes to the sidebar.
             let state = self.state.lock().unwrap();
