@@ -6,6 +6,17 @@ use std::sync::{Arc, Mutex};
 
 use crate::app::SharedState;
 use crate::notification;
+use crate::service::config::ServiceConfig;
+use crate::settings::AppSettings;
+
+/// Whether a URL is safe to hand to the OS handler via `open::that`.
+/// Only web + mail schemes; everything else (file://, custom protocol handlers,
+/// javascript:, data:, etc.) is rejected so a remote service page cannot abuse
+/// `Ferdium.openNewWindow` to disclose local files or invoke system handlers.
+pub fn is_allowed_url(url: &str) -> bool {
+    let lower = url.trim().to_ascii_lowercase();
+    lower.starts_with("https://") || lower.starts_with("http://") || lower.starts_with("mailto:")
+}
 
 /// CEF MessageRouter handler that receives cefQuery messages from JS.
 pub struct OmniChatQueryHandler {
@@ -117,6 +128,24 @@ pub enum IpcMessage {
 
     #[serde(rename = "open_settings")]
     OpenSettings {},
+
+    #[serde(rename = "update_settings")]
+    UpdateSettings { settings: AppSettings },
+
+    #[serde(rename = "set_service_flag")]
+    SetServiceFlag {
+        #[serde(rename = "serviceId")]
+        service_id: String,
+        flag: String,
+        value: bool,
+    },
+
+    #[serde(rename = "rename_service")]
+    RenameService {
+        #[serde(rename = "serviceId")]
+        service_id: String,
+        name: String,
+    },
 }
 
 /// Handle an IPC message from a service webview.
@@ -194,8 +223,15 @@ pub fn handle_message(state: &SharedState, raw: &str) {
         }
 
         IpcMessage::OpenUrl { url } => {
-            info!("Opening URL in system browser: {url}");
-            let _ = open::that(&url);
+            // A loaded remote page can reach this via Ferdium.openNewWindow(url).
+            // Only hand safe schemes to the OS handler — never file:// or custom
+            // protocol handlers (local-file disclosure / handler-abuse / RCE).
+            if is_allowed_url(&url) {
+                info!("Opening URL in system browser: {url}");
+                let _ = open::that(&url);
+            } else {
+                warn!("Refused to open URL with disallowed scheme: {url}");
+            }
         }
 
         IpcMessage::ActivateService { service_id } => {
@@ -369,6 +405,88 @@ pub fn handle_message(state: &SharedState, raw: &str) {
             }
             push_sidebar_state(&s);
         }
+
+        IpcMessage::UpdateSettings { settings } => {
+            info!("Updating settings via IPC");
+            let mut s = state.lock();
+            s.settings = settings;
+            let snapshot = s.settings.clone();
+            snapshot.save(&s.db);
+        }
+
+        IpcMessage::SetServiceFlag {
+            service_id,
+            flag,
+            value,
+        } => {
+            info!("Set service flag {service_id}.{flag} = {value}");
+            let mut s = state.lock();
+            let mut saved: Option<ServiceConfig> = None;
+            if let Some(cfg) = s.service_manager.get_config_mut(&service_id) {
+                let ok = match flag.as_str() {
+                    "muted" => {
+                        cfg.is_muted = value;
+                        true
+                    }
+                    "notifications" => {
+                        cfg.is_notification_enabled = value;
+                        true
+                    }
+                    "badge" => {
+                        cfg.is_badge_enabled = value;
+                        true
+                    }
+                    "darkMode" => {
+                        cfg.is_dark_mode_enabled = value;
+                        true
+                    }
+                    "hibernation" => {
+                        cfg.is_hibernation_enabled = value;
+                        true
+                    }
+                    "enabled" => {
+                        cfg.is_enabled = value;
+                        true
+                    }
+                    _ => false,
+                };
+                if ok {
+                    saved = Some(cfg.clone());
+                }
+            }
+            match saved {
+                Some(cfg) => {
+                    crate::db::warn_on_err(
+                        "save_service",
+                        crate::db::queries::save_service(&s.db, &cfg),
+                    );
+                    push_sidebar_state(&s);
+                }
+                None => {
+                    warn!("set_service_flag: unknown service '{service_id}' or flag '{flag}'")
+                }
+            }
+        }
+
+        IpcMessage::RenameService { service_id, name } => {
+            info!("Rename service {service_id} -> {name}");
+            let mut s = state.lock();
+            let mut saved: Option<ServiceConfig> = None;
+            if let Some(cfg) = s.service_manager.get_config_mut(&service_id) {
+                cfg.name = name;
+                saved = Some(cfg.clone());
+            }
+            match saved {
+                Some(cfg) => {
+                    crate::db::warn_on_err(
+                        "save_service",
+                        crate::db::queries::save_service(&s.db, &cfg),
+                    );
+                    push_sidebar_state(&s);
+                }
+                None => warn!("rename_service: unknown service '{service_id}'"),
+            }
+        }
     }
 }
 
@@ -383,8 +501,10 @@ fn push_sidebar_state(state: &crate::app::AppState) {
         None => return,
     };
 
-    let services_json =
-        serde_json::to_string(state.service_manager.services()).unwrap_or_else(|_| "[]".into());
+    // Serialize in display order (sort_order), so reorder is reflected live
+    // without a restart.
+    let sorted = state.service_manager.sorted_services();
+    let services_json = serde_json::to_string(&sorted).unwrap_or_else(|_| "[]".into());
     let active_json = state
         .active_service_id
         .as_ref()
@@ -469,7 +589,11 @@ function renderSettings() {{
         var row = document.createElement('div'); row.className = 'setting';
         var label = document.createElement('span'); label.className = 'setting-label'; label.textContent = item[0];
         var toggle = document.createElement('div'); toggle.className = 'toggle' + (item[2] ? ' on' : '');
-        toggle.addEventListener('click', function() {{ toggle.classList.toggle('on'); }});
+        toggle.addEventListener('click', function() {{
+            toggle.classList.toggle('on');
+            settings[item[1]] = toggle.classList.contains('on');
+            sendIPC({{ type: 'update_settings', settings: settings }});
+        }});
         row.appendChild(label); row.appendChild(toggle);
         el.appendChild(row);
     }});

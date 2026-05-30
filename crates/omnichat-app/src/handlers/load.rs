@@ -250,7 +250,12 @@ wrap_load_handler! {
 
             // Push initial service state + available recipes to the sidebar.
             let state = self.state.lock();
-            let services = state.service_manager.services().clone();
+            let services: Vec<_> = state
+                .service_manager
+                .sorted_services()
+                .into_iter()
+                .cloned()
+                .collect();
             let active_id = state.active_service_id.clone();
 
             // Build a compact recipe catalog: [{id, name, url}, ...]
