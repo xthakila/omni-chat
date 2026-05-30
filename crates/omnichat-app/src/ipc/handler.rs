@@ -556,27 +556,32 @@ fn push_sidebar_state(state: &crate::app::AppState) {
 /// Build the settings HTML page.
 fn build_settings_html(services_json: &str, settings_json: &str) -> String {
     let template = r#"<!DOCTYPE html>
-<html><head><meta charset="UTF-8">
+<html data-theme="dark"><head><meta charset="UTF-8">
 <style>
-:root {{ --bg:#1e1e2e; --sf:#313244; --hv:#45475a; --ac:#cba6f7; --tx:#cdd6f4; --dm:#6c7086; --rd:#f38ba8; }}
-* {{ margin:0; padding:0; box-sizing:border-box; }}
-body {{ font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif; background:var(--bg); color:var(--tx); padding:32px 40px; }}
-h1 {{ font-size:22px; font-weight:700; margin-bottom:24px; }}
-h2 {{ font-size:15px; font-weight:600; color:var(--ac); margin:24px 0 12px; }}
-.svc-row {{ display:flex; align-items:center; padding:10px 14px; background:var(--sf); border-radius:8px; margin-bottom:6px; gap:12px; }}
-.svc-name {{ flex:1; font-size:13px; font-weight:500; }}
+/*__THEME__*/
+:root {{ --bg:var(--surface-base); --sf:var(--surface-raised); --hv:var(--surface-hover); --ac:var(--accent); --tx:var(--text-strong); --dm:var(--text-muted); --rd:var(--danger); }}
+body {{ font-family:var(--font); background:var(--bg); color:var(--tx); padding:36px 40px; max-width:760px; margin:0 auto; -webkit-font-smoothing:antialiased; }}
+h1 {{ font-size:24px; font-weight:700; margin-bottom:4px; letter-spacing:-.01em; }}
+.sub {{ color:var(--dm); font-size:13px; margin-bottom:28px; }}
+h2 {{ font-size:12px; font-weight:700; color:var(--dm); text-transform:uppercase; letter-spacing:.06em; margin:26px 0 10px; }}
+.svc-row {{ display:flex; align-items:center; padding:12px 14px; background:var(--sf); border:1px solid var(--border-subtle); border-radius:var(--r-md); margin-bottom:7px; gap:12px; }}
+.svc-ico {{ width:30px; height:30px; border-radius:8px; background:var(--hv); display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:700; color:var(--ac); flex-shrink:0; }}
+.svc-name {{ flex:1; font-size:14px; font-weight:600; }}
 .svc-recipe {{ color:var(--dm); font-size:11px; }}
-.rm-btn {{ background:none; border:1px solid rgba(243,139,168,.3); color:var(--rd); border-radius:6px; padding:4px 10px; font-size:11px; cursor:pointer; }}
-.rm-btn:hover {{ background:rgba(243,139,168,.1); }}
-.setting {{ display:flex; align-items:center; justify-content:space-between; padding:10px 14px; background:var(--sf); border-radius:8px; margin-bottom:6px; }}
-.setting-label {{ font-size:13px; }}
-.toggle {{ width:40px; height:22px; background:var(--hv); border-radius:11px; cursor:pointer; position:relative; transition:background .2s; }}
+.rm-btn {{ background:none; border:1px solid var(--border-strong); color:var(--dm); border-radius:var(--r-sm); padding:5px 12px; font-size:12px; font-weight:600; cursor:pointer; transition:all .12s; }}
+.rm-btn:hover {{ border-color:var(--rd); color:var(--rd); }}
+.rm-btn.armed {{ background:var(--rd); border-color:var(--rd); color:#fff; }}
+.setting {{ display:flex; align-items:center; justify-content:space-between; padding:12px 14px; background:var(--sf); border:1px solid var(--border-subtle); border-radius:var(--r-md); margin-bottom:7px; }}
+.setting-label {{ font-size:14px; font-weight:500; }}
+.toggle {{ width:42px; height:24px; background:var(--hv); border-radius:var(--r-pill); cursor:pointer; position:relative; transition:background .2s; flex-shrink:0; }}
 .toggle.on {{ background:var(--ac); }}
-.toggle::after {{ content:''; width:18px; height:18px; background:#fff; border-radius:50%; position:absolute; top:2px; left:2px; transition:transform .2s; }}
+.toggle::after {{ content:''; width:18px; height:18px; background:#fff; border-radius:50%; position:absolute; top:3px; left:3px; transition:transform .2s; }}
 .toggle.on::after {{ transform:translateX(18px); }}
+.empty {{ color:var(--dm); font-size:13px; padding:8px 2px; }}
 </style></head>
 <body>
 <h1>Settings</h1>
+<p class="sub">Manage your services and preferences</p>
 <h2>Services</h2>
 <div id="svcs"></div>
 <h2>General</h2>
@@ -588,13 +593,29 @@ function sendIPC(msg) {{ window.location.href = 'omnichat-ipc://' + encodeURICom
 function renderServices() {{
     var el = document.getElementById('svcs');
     while(el.firstChild) el.removeChild(el.firstChild);
+    if (!services.length) {{
+        var e = document.createElement('div'); e.className = 'empty';
+        e.textContent = 'No services yet. Click + in the sidebar to add one.';
+        el.appendChild(e); return;
+    }}
     services.forEach(function(s) {{
         var row = document.createElement('div'); row.className = 'svc-row';
+        var ico = document.createElement('div'); ico.className = 'svc-ico';
+        ico.textContent = (s.name || '?').charAt(0).toUpperCase();
         var name = document.createElement('span'); name.className = 'svc-name'; name.textContent = s.name;
         var recipe = document.createElement('span'); recipe.className = 'svc-recipe'; recipe.textContent = s.recipe_id;
         var btn = document.createElement('button'); btn.className = 'rm-btn'; btn.textContent = 'Remove';
-        btn.addEventListener('click', function() {{ sendIPC({{ type:'remove_service', serviceId:s.id }}); services = services.filter(function(x){{return x.id!==s.id}}); renderServices(); }});
-        row.appendChild(name); row.appendChild(recipe); row.appendChild(btn);
+        var armed = false;
+        btn.addEventListener('click', function() {{
+            if (!armed) {{
+                armed = true; btn.textContent = 'Confirm?'; btn.classList.add('armed');
+                setTimeout(function() {{ armed = false; btn.textContent = 'Remove'; btn.classList.remove('armed'); }}, 3000);
+                return;
+            }}
+            sendIPC({{ type:'remove_service', serviceId:s.id }});
+            services = services.filter(function(x){{ return x.id!==s.id; }}); renderServices();
+        }});
+        row.appendChild(ico); row.appendChild(name); row.appendChild(recipe); row.appendChild(btn);
         el.appendChild(row);
     }});
 }}
@@ -620,33 +641,37 @@ function renderSettings() {{
 }}
 renderServices(); renderSettings();
 </script></body></html>"#;
-    template
+    // Collapse the {{ }} brace-escaping + fill placeholders FIRST, then inject
+    // the shared theme (theme.css uses single braces, so it must go in after the
+    // collapse). The /*__THEME__*/ sentinel has no braces, so it survives.
+    let html = template
         .replace("{{", "{")
         .replace("}}", "}")
         .replace("{services}", services_json)
-        .replace("{settings}", settings_json)
+        .replace("{settings}", settings_json);
+    crate::app::with_theme(&html)
 }
 
 /// Build the service picker HTML page.
 fn build_picker_html(recipes_json: &str) -> String {
     let template = r#"<!DOCTYPE html>
-<html><head><meta charset="UTF-8">
+<html data-theme="dark"><head><meta charset="UTF-8">
 <style>
-:root {{ --bg:#1e1e2e; --sf:#313244; --hv:#45475a; --ac:#cba6f7; --tx:#cdd6f4; --dm:#6c7086; --rd:#f38ba8; --gn:#a6e3a1; }}
-* {{ margin:0; padding:0; box-sizing:border-box; }}
-body {{ font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif; background:var(--bg); color:var(--tx); height:100vh; display:flex; flex-direction:column; }}
+/*__THEME__*/
+:root {{ --bg:var(--surface-base); --sf:var(--surface-raised); --hv:var(--surface-hover); --ac:var(--accent); --tx:var(--text-strong); --dm:var(--text-muted); --rd:var(--danger); --gn:var(--success); }}
+body {{ font-family:var(--font); background:var(--bg); color:var(--tx); height:100vh; display:flex; flex-direction:column; -webkit-font-smoothing:antialiased; }}
 .hdr {{ padding:32px 40px 16px; flex-shrink:0; }}
-h1 {{ font-size:22px; font-weight:700; margin-bottom:4px; }}
+h1 {{ font-size:24px; font-weight:700; margin-bottom:4px; letter-spacing:-.01em; }}
 .sub {{ color:var(--dm); font-size:13px; margin-bottom:16px; }}
-.search {{ width:100%; max-width:480px; padding:10px 16px; border:1px solid var(--hv); border-radius:10px; background:var(--sf); color:var(--tx); font-size:14px; outline:none; }}
+.search {{ width:100%; max-width:480px; padding:11px 16px; border:1px solid var(--border-strong); border-radius:var(--r-md); background:var(--surface-sunken); color:var(--tx); font-size:14px; outline:none; transition:border-color .12s; }}
 .search:focus {{ border-color:var(--ac); }}
 .search::placeholder {{ color:var(--dm); }}
 .grid {{ flex:1; overflow-y:auto; padding:8px 40px 40px; align-content:start; }}
-.section-title {{ font-size:12px; font-weight:700; color:var(--dm); text-transform:uppercase; letter-spacing:.5px; padding:12px 0 6px; }}
-.cards {{ display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:8px; margin-bottom:8px; }}
-.card {{ display:flex; align-items:center; gap:12px; padding:12px 14px; border-radius:10px; cursor:pointer; transition:background .1s; }}
-.card:hover {{ background:var(--sf); }}
-.card-icon {{ width:36px; height:36px; border-radius:10px; background:var(--hv); display:flex; align-items:center; justify-content:center; font-size:16px; font-weight:700; flex-shrink:0; }}
+.section-title {{ font-size:12px; font-weight:700; color:var(--dm); text-transform:uppercase; letter-spacing:.5px; padding:14px 0 6px; }}
+.cards {{ display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:6px; margin-bottom:8px; }}
+.card {{ display:flex; align-items:center; gap:12px; padding:11px 12px; border-radius:var(--r-md); cursor:pointer; transition:background .1s; border:1px solid transparent; }}
+.card:hover {{ background:var(--sf); border-color:var(--border-subtle); }}
+.card-icon {{ width:38px; height:38px; border-radius:var(--r-md); background:var(--accent-soft); color:var(--ac); display:flex; align-items:center; justify-content:center; font-size:16px; font-weight:700; flex-shrink:0; }}
 .card-name {{ font-size:13px; font-weight:600; }}
 .card-url {{ font-size:11px; color:var(--dm); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:140px; }}
 .team-modal {{ display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:10; align-items:center; justify-content:center; }}
@@ -757,11 +782,14 @@ render('');
     // The template uses {{ and }} for JS braces (format! escaping). Since we're now using
     // .replace() instead, we need to unescape them first.
     let count = recipes_json.matches("\"id\"").count();
-    template
+    let html = template
         .replace("{{", "{")
         .replace("}}", "}")
         .replace("{recipes}", recipes_json)
-        .replace("{count}", &count.to_string())
+        .replace("{count}", &count.to_string());
+    // Inject the shared theme AFTER the brace-collapse (theme.css uses single
+    // braces); the /*__THEME__*/ sentinel has no braces so it survives.
+    crate::app::with_theme(&html)
 }
 
 #[cfg(test)]
