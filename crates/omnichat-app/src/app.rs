@@ -470,8 +470,7 @@ wrap_browser_process_handler! {
             info!("Main window created with sidebar + content");
 
             // Start the lifecycle tick timer (checks for freeze/hibernate transitions).
-            let mut lifecycle_task = crate::service::lifecycle::LifecycleTickTask::new(state.clone());
-            post_delayed_task(ThreadId::UI, Some(&mut lifecycle_task), 30_000);
+            crate::service::lifecycle::schedule(state.clone());
         }
 
         fn default_client(&self) -> Option<Client> {

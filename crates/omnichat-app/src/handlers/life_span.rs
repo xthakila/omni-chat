@@ -96,6 +96,12 @@ wrap_life_span_handler! {
 
             if let Some(id) = to_remove {
                 state.browsers.remove(&id);
+                // Also drop the stale BrowserView. Without this, a hibernated
+                // service keeps a (now-destroyed) view in browser_views, so
+                // reactivation skips creation (`needs_creation` stays false) and
+                // swaps in a dead pane. Removing it forces a fresh, live view on
+                // the next activate.
+                state.browser_views.remove(&id);
                 info!("Browser closed for service: {id}");
             }
 

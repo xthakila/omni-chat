@@ -30,6 +30,14 @@ fn tick_ms() -> i64 {
         .unwrap_or(30_000)
 }
 
+/// Schedule the first lifecycle tick. Subsequent ticks reschedule themselves.
+/// Uses the same (env-overridable) cadence as recurring ticks, so the initial
+/// delay also honors OMNICHAT_TICK_MS.
+pub fn schedule(state: SharedState) {
+    let mut task = LifecycleTickTask::new(state);
+    post_delayed_task(ThreadId::UI, Some(&mut task), tick_ms());
+}
+
 /// Manages lifecycle transitions for service browsers.
 /// Called periodically from a CEF timer task.
 pub struct LifecycleManager;
@@ -38,72 +46,86 @@ impl LifecycleManager {
     /// Check all services and transition as needed.
     /// Should be called on the CEF UI thread.
     pub fn tick(state: &SharedState) {
-        let mut s = state.lock();
         let now = Instant::now();
-        let active_id = s.active_service_id.clone();
+        let freeze_after = freeze_after();
+        let hibernate_after = hibernate_after();
 
-        let service_ids: Vec<String> = s
-            .service_manager
-            .services()
-            .iter()
-            .filter(|svc| svc.is_enabled && svc.is_hibernation_enabled)
-            .map(|svc| svc.id.clone())
-            .collect();
+        // Phase 1 — decide transitions under the lock; collect browser handles +
+        // pending state updates; then DROP the lock. We must NOT hold the state
+        // lock during CEF host ops (close_browser triggers on_before_close, which
+        // re-locks state): same discipline as swap_content_view.
+        let mut to_freeze: Vec<Browser> = Vec::new();
+        let mut to_hibernate: Vec<Browser> = Vec::new();
+        let mut updates: Vec<(String, ServiceLifecycleState)> = Vec::new();
+        {
+            let s = state.lock();
+            let active_id = s.active_service_id.clone();
+            let service_ids: Vec<String> = s
+                .service_manager
+                .services()
+                .iter()
+                .filter(|svc| svc.is_enabled && svc.is_hibernation_enabled)
+                .map(|svc| svc.id.clone())
+                .collect();
 
-        for id in service_ids {
-            // Don't touch the active service.
-            if active_id.as_ref() == Some(&id) {
-                continue;
-            }
-
-            let (current_state, idle_time) = {
-                if let Some(rt) = s.service_manager.get_runtime(&id) {
-                    (rt.lifecycle, now.duration_since(rt.last_active))
-                } else {
+            for id in service_ids {
+                if active_id.as_ref() == Some(&id) {
                     continue;
                 }
-            };
-
-            let freeze_after = freeze_after();
-            let hibernate_after = hibernate_after();
-            let new_state = match current_state {
-                ServiceLifecycleState::Backgrounded if idle_time >= hibernate_after => {
-                    ServiceLifecycleState::Hibernated
-                }
-                ServiceLifecycleState::Backgrounded if idle_time >= freeze_after => {
-                    ServiceLifecycleState::Frozen
-                }
-                ServiceLifecycleState::Frozen if idle_time >= hibernate_after => {
-                    ServiceLifecycleState::Hibernated
-                }
-                _ => continue,
-            };
-
-            info!(
-                "Service {id}: {:?} → {:?} (idle {:?})",
-                current_state, new_state, idle_time
-            );
-
-            // Apply the transition.
-            match new_state {
-                ServiceLifecycleState::Frozen => {
-                    if let Some(browser) = s.browsers.get(&id) {
-                        if let Some(host) = browser.host() {
-                            host.set_audio_muted(1);
+                let (current_state, idle_time) = match s.service_manager.get_runtime(&id) {
+                    Some(rt) => (rt.lifecycle, now.duration_since(rt.last_active)),
+                    None => continue,
+                };
+                let new_state = match current_state {
+                    ServiceLifecycleState::Backgrounded if idle_time >= hibernate_after => {
+                        ServiceLifecycleState::Hibernated
+                    }
+                    ServiceLifecycleState::Backgrounded if idle_time >= freeze_after => {
+                        ServiceLifecycleState::Frozen
+                    }
+                    ServiceLifecycleState::Frozen if idle_time >= hibernate_after => {
+                        ServiceLifecycleState::Hibernated
+                    }
+                    _ => continue,
+                };
+                info!("Service {id}: {current_state:?} → {new_state:?} (idle {idle_time:?})");
+                match new_state {
+                    ServiceLifecycleState::Frozen => {
+                        if let Some(b) = s.browsers.get(&id) {
+                            to_freeze.push(b.clone());
                         }
                     }
-                    s.service_manager.set_lifecycle_state(&id, new_state);
-                }
-                ServiceLifecycleState::Hibernated => {
-                    // Close the browser entirely.
-                    if let Some(browser) = s.browsers.get(&id) {
-                        if let Some(host) = browser.host() {
-                            host.close_browser(1);
+                    ServiceLifecycleState::Hibernated => {
+                        if let Some(b) = s.browsers.get(&id) {
+                            to_hibernate.push(b.clone());
                         }
                     }
-                    s.service_manager.set_lifecycle_state(&id, new_state);
+                    _ => {}
                 }
-                _ => {}
+                updates.push((id, new_state));
+            }
+        }
+
+        // Phase 2 — CEF host ops without the lock held.
+        for b in &to_freeze {
+            if let Some(host) = b.host() {
+                host.set_audio_muted(1);
+            }
+        }
+        for b in &to_hibernate {
+            // close_browser drives on_before_close, which removes the browser AND
+            // its BrowserView from state so reactivation rebuilds a live view and
+            // the renderer process can exit (reclaiming memory).
+            if let Some(host) = b.host() {
+                host.close_browser(1);
+            }
+        }
+
+        // Phase 3 — record the new lifecycle states.
+        if !updates.is_empty() {
+            let mut s = state.lock();
+            for (id, ns) in updates {
+                s.service_manager.set_lifecycle_state(&id, ns);
             }
         }
     }
