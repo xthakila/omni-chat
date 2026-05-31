@@ -34,6 +34,11 @@ Ferdium uses Electron + React + MobX + AdonisJS + SQLite ORM + many simultaneous
 - **"Aurora" design system** — dark activity rail with accent active-pill, empty state, light/dark-ready tokens (`resources/theme.css`)
 - **Origin-gated IPC** — privileged actions (add/remove/switch/settings) are accepted only from the app's own trusted UI, never from a loaded service page; outbound link-opens are restricted to `http(s)`/`mailto` (see [Security](#security))
 - **Session-preserving picker/settings** — opening the picker or settings renders in a trusted overlay and does **not** reload (log out) the active service
+- **Drag-to-reorder the rail** — drag a service icon to reorder; the order persists across restarts
+- **Per-service controls in Settings** — inline rename, per-service Mute / Notifications / Dark-mode toggles, ↑/↓ reorder, and Remove
+- **Reload a service** — right-click a rail icon → Reload (Chromium's own Ctrl+R also works when a service is focused)
+- **Unread count in the window title** — the title shows `OmniChat (N)` when services have unread messages
+- **Light / dark / auto appearance** — Settings → Appearance themes the app's own pages (picker/settings); the rail stays dark chrome. *Auto* follows your OS
 
 ## Install
 

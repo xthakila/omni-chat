@@ -422,7 +422,7 @@ pub fn handle_message(state: &SharedState, raw: &str, sender_id: Option<i32>) {
 
         IpcMessage::OpenSettings {} => {
             info!("Opening settings");
-            let (services_json, settings_json) = {
+            let (services_json, settings_json, theme) = {
                 let s = state.lock();
                 let sorted = s.service_manager.sorted_services();
                 (
@@ -432,17 +432,18 @@ pub fn handle_message(state: &SharedState, raw: &str, sender_id: Option<i32>) {
                     crate::app::js_embed(
                         &serde_json::to_string(&s.settings).unwrap_or_else(|_| "{}".into()),
                     ),
+                    s.settings.theme.clone(),
                 )
             };
             // Render in the trusted overlay so the active service's session is
             // preserved (no logout) and the page is origin-classified as trusted.
-            let html = build_settings_html(&services_json, &settings_json);
+            let html = build_settings_html(&services_json, &settings_json, &theme);
             crate::app::show_overlay(state, &html);
         }
 
         IpcMessage::OpenPicker {} => {
             info!("Opening service picker");
-            let recipes_json = {
+            let (recipes_json, theme) = {
                 let s = state.lock();
                 let recipe_catalog: Vec<serde_json::Value> = s
                     .recipes
@@ -456,12 +457,15 @@ pub fn handle_message(state: &SharedState, raw: &str, sender_id: Option<i32>) {
                         })
                     })
                     .collect();
-                crate::app::js_embed(
-                    &serde_json::to_string(&recipe_catalog).unwrap_or_else(|_| "[]".into()),
+                (
+                    crate::app::js_embed(
+                        &serde_json::to_string(&recipe_catalog).unwrap_or_else(|_| "[]".into()),
+                    ),
+                    s.settings.theme.clone(),
                 )
             };
             // Render in the trusted overlay (preserves the active service session).
-            let picker_html = build_picker_html(&recipes_json);
+            let picker_html = build_picker_html(&recipes_json, &theme);
             crate::app::show_overlay(state, &picker_html);
         }
 
@@ -625,8 +629,20 @@ fn push_sidebar_state(state: &crate::app::AppState) {
     frame.execute_java_script(Some(&js), Some(&url), 0);
 }
 
+/// The `<html>` open tag for a given content theme. "auto" omits the attribute
+/// so the page follows the OS via theme.css's `prefers-color-scheme`; "light"/
+/// "dark" force it. We replace the whole tag (not the bare `data-theme="dark"`
+/// substring, which also occurs inside the injected theme.css selectors).
+fn html_open_tag(theme: &str) -> &'static str {
+    match theme {
+        "light" => "<html data-theme=\"light\">",
+        "auto" => "<html>",
+        _ => "<html data-theme=\"dark\">",
+    }
+}
+
 /// Build the settings HTML page.
-fn build_settings_html(services_json: &str, settings_json: &str) -> String {
+fn build_settings_html(services_json: &str, settings_json: &str, theme: &str) -> String {
     let template = r#"<!DOCTYPE html>
 <html data-theme="dark"><head><meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: https: http:; font-src data:; connect-src 'none';">
@@ -661,6 +677,10 @@ h2 {{ font-size:12px; font-weight:700; color:var(--dm); text-transform:uppercase
 .chip:hover {{ border-color:var(--text-faint); }}
 .chip.on {{ background:var(--accent-soft); border-color:var(--ac); color:var(--ac); }}
 .sep {{ width:1px; height:18px; background:var(--border-subtle); margin:0 2px; }}
+.seg {{ display:flex; gap:4px; flex-shrink:0; }}
+.seg-btn {{ border:1px solid var(--border-strong); background:none; color:var(--dm); border-radius:var(--r-sm); padding:5px 13px; font-size:12px; font-weight:600; cursor:pointer; transition:all .12s; }}
+.seg-btn:hover {{ border-color:var(--text-faint); }}
+.seg-btn.on {{ background:var(--accent-soft); border-color:var(--ac); color:var(--ac); }}
 </style></head>
 <body>
 <h1>Settings</h1>
@@ -767,6 +787,31 @@ function renderSettings() {{
         row.appendChild(label); row.appendChild(toggle);
         el.appendChild(row);
     }});
+    // Appearance: auto / light / dark. Applies live to this page (rail stays dark).
+    function applyTheme(t) {{
+        if (t === 'auto') document.documentElement.removeAttribute('data-theme');
+        else document.documentElement.setAttribute('data-theme', t);
+    }}
+    var trow = document.createElement('div'); trow.className = 'setting';
+    var tlabel = document.createElement('span'); tlabel.className = 'setting-label'; tlabel.textContent = 'Appearance';
+    var seg = document.createElement('div'); seg.className = 'seg';
+    var cur = settings.theme || 'auto';
+    ['auto','light','dark'].forEach(function(opt) {{
+        var b = document.createElement('button');
+        b.className = 'seg-btn' + (cur === opt ? ' on' : '');
+        b.textContent = opt.charAt(0).toUpperCase() + opt.slice(1);
+        b.addEventListener('click', function() {{
+            settings.theme = opt;
+            var btns = seg.getElementsByClassName('seg-btn');
+            for (var i = 0; i < btns.length; i++) btns[i].classList.remove('on');
+            b.classList.add('on');
+            applyTheme(opt);
+            sendIPC({{ type: 'update_settings', settings: settings }});
+        }});
+        seg.appendChild(b);
+    }});
+    trow.appendChild(tlabel); trow.appendChild(seg);
+    el.appendChild(trow);
 }}
 renderServices(); renderSettings();
 </script></body></html>"#;
@@ -778,11 +823,11 @@ renderServices(); renderSettings();
         .replace("}}", "}")
         .replace("{services}", services_json)
         .replace("{settings}", settings_json);
-    crate::app::with_theme(&html)
+    crate::app::with_theme(&html).replace("<html data-theme=\"dark\">", html_open_tag(theme))
 }
 
 /// Build the service picker HTML page.
-fn build_picker_html(recipes_json: &str) -> String {
+fn build_picker_html(recipes_json: &str, theme: &str) -> String {
     let template = r#"<!DOCTYPE html>
 <html data-theme="dark"><head><meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: https: http:; font-src data:; connect-src 'none';">
@@ -919,7 +964,7 @@ render('');
         .replace("{count}", &count.to_string());
     // Inject the shared theme AFTER the brace-collapse (theme.css uses single
     // braces); the /*__THEME__*/ sentinel has no braces so it survives.
-    crate::app::with_theme(&html)
+    crate::app::with_theme(&html).replace("<html data-theme=\"dark\">", html_open_tag(theme))
 }
 
 #[cfg(test)]
@@ -1005,5 +1050,40 @@ mod tests {
     #[test]
     fn rejects_unknown_message_type() {
         assert!(serde_json::from_str::<IpcMessage>(r#"{"type":"definitely_not_real"}"#).is_err());
+    }
+
+    #[test]
+    fn html_open_tag_maps_theme() {
+        assert_eq!(html_open_tag("auto"), "<html>");
+        assert_eq!(html_open_tag("light"), "<html data-theme=\"light\">");
+        assert_eq!(html_open_tag("dark"), "<html data-theme=\"dark\">");
+        // Unknown values fall back to dark (the safe chrome default).
+        assert_eq!(html_open_tag("weird"), "<html data-theme=\"dark\">");
+    }
+
+    #[test]
+    fn settings_page_applies_theme_to_html_tag() {
+        // light/auto must rewrite the page's own <html> tag, WITHOUT touching the
+        // `[data-theme="dark"]` selectors that theme.css injects into the page.
+        let light = build_settings_html("[]", "{}", "light");
+        assert!(light.contains("<html data-theme=\"light\">"));
+        assert!(!light.contains("<html data-theme=\"dark\">"));
+        // theme.css's auto-light selector must survive (proves we didn't blanket-replace).
+        assert!(light.contains(":root:not([data-theme=\"dark\"])"));
+
+        let auto = build_settings_html("[]", "{}", "auto");
+        assert!(auto.contains("<html>"));
+        assert!(!auto.contains("<html data-theme=\"dark\">"));
+
+        let dark = build_settings_html("[]", "{}", "dark");
+        assert!(dark.contains("<html data-theme=\"dark\">"));
+    }
+
+    #[test]
+    fn picker_page_applies_theme_to_html_tag() {
+        let light = build_picker_html("[]", "light");
+        assert!(light.contains("<html data-theme=\"light\">"));
+        assert!(!light.contains("<html data-theme=\"dark\">"));
+        assert!(light.contains(":root:not([data-theme=\"dark\"])"));
     }
 }

@@ -119,6 +119,11 @@ pub fn load_all_settings(conn: &Connection) -> AppSettings {
     if let Some(v) = load_setting(conn, "global_hibernation_enabled") {
         settings.global_hibernation_enabled = v == "true";
     }
+    if let Some(v) = load_setting(conn, "theme") {
+        if matches!(v.as_str(), "auto" | "light" | "dark") {
+            settings.theme = v;
+        }
+    }
 
     settings
 }
