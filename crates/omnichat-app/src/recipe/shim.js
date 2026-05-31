@@ -16,22 +16,13 @@
     var _darkModeHandler = null;
     var _toggleToTalkFn = null;
 
-    // Send IPC message to Rust. Uses cefQuery if available, falls back to URL scheme.
+    // Send IPC message to Rust via the omnichat-ipc:// URL scheme (intercepted in
+    // on_before_browse). We do NOT use window.cefQuery: the CEF message router's
+    // render->browser round-trip does not deliver in this build (the query hangs
+    // with no success/failure callback), so badges + notifications were silently
+    // dropped. The URL-scheme path (hidden iframe) is the reliable channel.
     function sendIPC(msg) {
-        var json = JSON.stringify(msg);
-        if (window.cefQuery) {
-            window.cefQuery({
-                request: json,
-                onSuccess: function() {},
-                onFailure: function(code, message) {
-                    console.warn('[OmniChat IPC] cefQuery failed:', code, message);
-                    // Fallback on failure.
-                    sendIPCviaURL(json);
-                },
-            });
-        } else {
-            sendIPCviaURL(json);
-        }
+        sendIPCviaURL(JSON.stringify(msg));
     }
 
     function sendIPCviaURL(json) {
