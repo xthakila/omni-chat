@@ -267,10 +267,13 @@ pub fn handle_message(state: &SharedState, raw: &str, sender_id: Option<i32>) {
 
             // Check DND mode.
             let dnd = s.settings.enable_dnd;
+            // Own the resolved id before dropping the lock so the notification
+            // thread can activate this service when the user clicks it.
+            let notify_id = lookup_id.to_string();
             drop(s);
 
             if enabled && !muted && !silent && !dnd {
-                notification::show(&service_name, &title, &body);
+                notification::show(&notify_id, &service_name, &title, &body);
             }
         }
 

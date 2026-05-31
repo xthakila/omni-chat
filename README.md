@@ -24,7 +24,7 @@ Ferdium uses Electron + React + MobX + AdonisJS + SQLite ORM + many simultaneous
 - **Searchable service picker** with Popular section — click `+`, search, click to add
 - **Service switching** — click sidebar icons, each service gets its own isolated browser session
 - **Session isolation** — separate cookies, localStorage, IndexedDB per service via CEF RequestContext
-- **Background notifications** — lifecycle-aware polling (2s active, 5s background)
+- **Background notifications** — lifecycle-aware polling (2s active, 5s background); on Linux, clicking a notification switches to the originating service
 - **Recipe injection** — full Ferdium API shim (setBadge, loop, onNotify, injectCSS, etc.)
 - **System tray** icon with unread badge + a quick-switch menu (one entry per service, snapshot at launch)
 - **Frameless window** with custom title bar

@@ -1,4 +1,3 @@
-use cef::*;
 use log::{debug, info, warn};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -7,24 +6,6 @@ use tray_icon::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
 use tray_icon::{Icon, TrayIconBuilder};
 
 static BADGE_COUNT: AtomicU32 = AtomicU32::new(0);
-
-// One-shot CEF task that switches to a service on the UI thread. Posted from the
-// tray's menu-event thread (which is NOT a CEF thread) so the view operations in
-// activate_and_show run where CEF requires them.
-wrap_task! {
-    struct TrayActivateTask {
-        service_id: String,
-    }
-
-    impl Task {
-        fn execute(&self) {
-            crate::ipc::handler::activate_and_show(
-                &crate::app::shared_state(),
-                self.service_id.clone(),
-            );
-        }
-    }
-}
 
 /// Channel to send badge updates to the tray icon thread.
 static BADGE_SENDER: std::sync::OnceLock<mpsc::Sender<u32>> = std::sync::OnceLock::new();
@@ -182,8 +163,7 @@ pub fn init() {
                 std::process::exit(0);
             } else if let Some(sid) = svc_map.get(&event.id) {
                 info!("Tray quick-switch to service: {sid}");
-                let mut task = TrayActivateTask::new(sid.clone());
-                post_delayed_task(ThreadId::UI, Some(&mut task), 0);
+                crate::app::post_activate_service(sid.clone());
             } else if event.id == show_id {
                 // Best-effort "Show": bring the active (or first) service forward.
                 let target = {
@@ -197,8 +177,7 @@ pub fn init() {
                     })
                 };
                 if let Some(sid) = target {
-                    let mut task = TrayActivateTask::new(sid);
-                    post_delayed_task(ThreadId::UI, Some(&mut task), 0);
+                    crate::app::post_activate_service(sid);
                 }
             }
         }

@@ -158,6 +158,28 @@ pub fn shared_state() -> SharedState {
         .clone()
 }
 
+// CEF task that switches to a service on the UI thread. Posted from non-UI
+// threads (the tray menu-event thread, the notification action thread) since
+// activate_and_show performs CEF view operations that must run on the UI thread.
+wrap_task! {
+    struct ActivateServiceTask {
+        service_id: String,
+    }
+
+    impl Task {
+        fn execute(&self) {
+            crate::ipc::handler::activate_and_show(&shared_state(), self.service_id.clone());
+        }
+    }
+}
+
+/// Post a service activation to the CEF UI thread from any thread. Used by the
+/// tray quick-switch and notification clicks.
+pub(crate) fn post_activate_service(service_id: String) {
+    let mut task = ActivateServiceTask::new(service_id);
+    post_delayed_task(ThreadId::UI, Some(&mut task), 0);
+}
+
 // --- Window delegate for the single main window ---
 
 wrap_window_delegate! {
