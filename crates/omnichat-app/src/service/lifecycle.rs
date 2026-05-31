@@ -113,11 +113,15 @@ impl LifecycleManager {
             }
         }
         for b in &to_hibernate {
-            // close_browser drives on_before_close, which removes the browser AND
-            // its BrowserView from state so reactivation rebuilds a live view and
-            // the renderer process can exit (reclaiming memory).
-            if let Some(host) = b.host() {
-                host.close_browser(1);
+            // Discard the page to about:blank: this frees the page's DOM/JS heap
+            // (the bulk of a service's RAM) while keeping the browser + view alive
+            // (no dead pane; switching stays instant). Reactivation reloads the
+            // real URL and the persistent profile restores the session.
+            // close_browser does NOT work here — it cannot tear down a
+            // BrowserView-backed browser, so it reclaims nothing.
+            if let Some(frame) = b.main_frame() {
+                let blank = CefString::from("about:blank");
+                frame.load_url(Some(&blank));
             }
         }
 

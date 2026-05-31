@@ -16,7 +16,7 @@ Ferdium uses Electron + React + MobX + AdonisJS + SQLite ORM + many simultaneous
 | RAM | 3–4 GB | **~0.8 GB PSS / ~1.5 GB RSS** for 3 services (measured) |
 | Recipes | 409 bundled | Ferdium-compatible (bring your own) |
 
-> Performance figures are measured on the dev machine (Ubuntu/GNOME/Wayland, software-rendered) via `scripts/rss-sampler.sh` and the `OMNICHAT_TIMING` startup timer — not synthetic. RAM is CEF/Chromium-dominated (one renderer process per service), so it scales with the number of live services. Backgrounded services are hidden (`was_hidden`) so Chromium throttles their timers/rendering, but note: full renderer teardown on hibernate does **not** currently reclaim memory — see [Known Limitations](#known-limitations).
+> Performance figures are measured on the dev machine (Ubuntu/GNOME/Wayland, software-rendered) via `scripts/rss-sampler.sh` and the `OMNICHAT_TIMING` startup timer — not synthetic. RAM is CEF/Chromium-dominated (one renderer process per service), so it scales with the number of live services. Backgrounded services are hidden (`was_hidden`) so Chromium throttles them, and after a longer idle they are **discarded** (`about:blank`) to free the page heap — see the lifecycle table + [Known Limitations](#known-limitations).
 
 ## Features
 
@@ -167,9 +167,9 @@ CommonJS polyfills: `require('path')`, `require('fs')` (reads from a small per-r
 | **Active** | Full | Full | Yes | 2s | Switch away |
 | **Backgrounded** | Hidden | Throttled | Yes | 5s | Idle 5 min |
 | **Frozen** | Hidden | Throttled | Yes | None | Idle 15 min |
-| **Hibernated** | Hidden | Throttled | Yes | None | Switch back |
+| **Hibernated** | Page discarded (`about:blank`) | None | No | None | Switch back → reload |
 
-> The lifecycle tick (env-tunable via `OMNICHAT_FREEZE_SECS` / `OMNICHAT_HIBERNATE_SECS` / `OMNICHAT_TICK_MS`) freezes idle services (audio muted) and marks them hibernated. **Limitation:** `Hibernated` currently still keeps the renderer alive — see [Known Limitations](#known-limitations). Switching back always restores the live page (sessions are preserved, never dead).
+> The lifecycle tick (env-tunable via `OMNICHAT_FREEZE_SECS` / `OMNICHAT_HIBERNATE_SECS` / `OMNICHAT_TICK_MS`) freezes idle services (audio muted) and then **discards** them to `about:blank` to free the page heap (see [Known Limitations](#known-limitations) for the trade-off). Switching back reloads the real URL; the persistent profile keeps you logged in.
 
 ## Platform Support
 
@@ -189,7 +189,7 @@ CommonJS polyfills: `require('path')`, `require('fs')` (reads from a small per-r
 ## Known Limitations
 
 - **GNOME Wayland taskbar icon.** CEF's Alloy runtime sends an empty `xdg_toplevel.set_app_id("")` and ignores the in-code `LinuxWindowProperties` / `--class` hints, so GNOME can't match the window to `omnichat.desktop` (generic icon). The bundled `wayland-app-id-proxy.py` is a protocol-proxy approach to this but is **not yet wired into the launcher**. The in-window and tray icons are correct.
-- **Hibernation doesn't reclaim RAM yet.** Idle services are hidden (Chromium throttles them) and marked hibernated, but `close_browser()` does not tear down a CEF-Views `BrowserView`-backed browser, so the renderer process stays alive. Switching back is instant and the session is preserved; full memory reclaim needs a BrowserView teardown/rebuild and is tracked separately.
+- **Hibernation = page discard.** Idle services (after `OMNICHAT_HIBERNATE_SECS`) discard their page by navigating to `about:blank`, freeing the page's DOM/JS heap — the bulk of a service's RAM — while keeping the browser + view alive (so switching stays instant, no dead pane). Reactivation reloads the real URL; the persistent per-service profile restores the login. (`close_browser()` is NOT used — it can't tear down a CEF-Views `BrowserView`-backed browser. Trade-off: unsaved page state, e.g. a half-typed message, is lost once a service has been idle long enough to discard.)
 - **CEF runtime required.** A ~300 MB CEF binary distribution must be installed separately (`export-cef-dir`).
 - **Recipes not bundled** (see above) and **no runtime `fs`** for recipes.
 - **Testing.** 20 unit tests cover the pure logic (URL allowlist, IPC parsing, URL decode, service-URL resolution, DB round-trips), run in CI. Service-by-service compatibility is spot-checked manually, not automated.
