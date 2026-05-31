@@ -8,8 +8,37 @@ use crate::handlers;
 pub struct OmniChatClient;
 
 impl OmniChatClient {
+    /// A service/content client with no pre-assigned id (used for the default
+    /// client, the welcome page, and popups). on_after_created falls back to the
+    /// FIFO/URL matching for these.
     pub fn new_client(state: SharedState, router: Arc<BrowserSideRouter>) -> Client {
-        OmniChatServiceClient::new(state.clone(), state.clone(), state.clone(), state, router)
+        OmniChatServiceClient::new(
+            state.clone(),
+            state.clone(),
+            state.clone(),
+            state,
+            router,
+            None,
+        )
+    }
+
+    /// A client that knows exactly which id its browser should register under.
+    /// This makes browser→id association robust against CEF's async creation
+    /// order (the FIFO queue races when, e.g., the overlay's small data: URI
+    /// realizes before a queued service browser).
+    pub fn new_client_for(
+        state: SharedState,
+        router: Arc<BrowserSideRouter>,
+        intended_id: &str,
+    ) -> Client {
+        OmniChatServiceClient::new(
+            state.clone(),
+            state.clone(),
+            state.clone(),
+            state,
+            router,
+            Some(intended_id.to_string()),
+        )
     }
 
     pub fn new_sidebar_client(state: SharedState, router: Arc<BrowserSideRouter>) -> Client {
@@ -26,12 +55,14 @@ wrap_client! {
         display_state: SharedState,
         request_state: SharedState,
         router: Arc<BrowserSideRouter>,
+        intended_id: Option<String>,
     }
 
     impl Client {
         fn life_span_handler(&self) -> Option<LifeSpanHandler> {
             Some(handlers::life_span::ServiceLifeSpanHandler::new(
                 self.life_span_state.clone(),
+                self.intended_id.clone(),
             ))
         }
 

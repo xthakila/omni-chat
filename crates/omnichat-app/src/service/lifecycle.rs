@@ -119,9 +119,18 @@ impl LifecycleManager {
             // real URL and the persistent profile restores the session.
             // close_browser does NOT work here — it cannot tear down a
             // BrowserView-backed browser, so it reclaims nothing.
+            // Discard via a RENDERER-initiated navigation (execute_java_script),
+            // NOT frame.load_url(): load_url calls CEF's RequestFocusSync on the
+            // BrowserView, which dereferences the view's Widget. A hibernated
+            // service is backgrounded — its view is detached from the window — so
+            // that Widget is gone and load_url segfaults (browser_view_impl.cc
+            // RequestFocusSync -> Widget::IsMinimized on a dead weak_ptr). A JS
+            // location.replace runs in the still-alive renderer and frees the
+            // page heap without touching host-side focus.
             if let Some(frame) = b.main_frame() {
-                let blank = CefString::from("about:blank");
-                frame.load_url(Some(&blank));
+                let js = CefString::from("location.replace('about:blank')");
+                let url = CefString::from("omnichat://hibernate");
+                frame.execute_java_script(Some(&js), Some(&url), 0);
             }
         }
 

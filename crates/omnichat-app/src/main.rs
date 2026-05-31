@@ -166,10 +166,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         global_cmd.append_switch_with_value(Some(&class_switch), Some(&class_value));
     }
 
+    // Optional remote DevTools port (off unless OMNICHAT_REMOTE_DEBUG_PORT is
+    // set). Enables tooling to inspect/drive the app's own pages over the
+    // DevTools protocol — used for automated verification; 0 = disabled.
+    let remote_debug_port: i32 = std::env::var("OMNICHAT_REMOTE_DEBUG_PORT")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+    if remote_debug_port != 0 {
+        info!("Remote DevTools enabled on port {remote_debug_port}");
+    }
+
     let settings = Settings {
         no_sandbox: 1,
         root_cache_path: root_cache,
         browser_subprocess_path: helper_path_str,
+        remote_debugging_port: remote_debug_port,
         ..Default::default()
     };
 

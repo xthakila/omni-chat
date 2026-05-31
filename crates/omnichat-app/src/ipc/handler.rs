@@ -586,8 +586,18 @@ pub(crate) fn activate_and_show(state: &SharedState, service_id: String) {
         if let Some(b) = browser {
             if let Some(frame) = b.main_frame() {
                 info!("Reloading hibernated service {service_id}");
-                let u = cef::CefString::from(url.as_str());
-                frame.load_url(Some(&u));
+                // Renderer-side navigation, NOT frame.load_url(): the view was
+                // just re-attached by swap_content_view, and load_url calls CEF's
+                // RequestFocusSync() on a Widget that isn't bound yet -> segfault
+                // (same failure as the overlay-reuse and hibernation-discard
+                // paths). location.replace runs in the (about:blank) renderer.
+                let js = format!(
+                    "location.replace({})",
+                    serde_json::to_string(&url).unwrap_or_else(|_| "\"about:blank\"".into())
+                );
+                let js = cef::CefString::from(js.as_str());
+                let nav = cef::CefString::from("omnichat://reactivate");
+                frame.execute_java_script(Some(&js), Some(&nav), 0);
             }
         }
     }

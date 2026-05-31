@@ -404,15 +404,10 @@ wrap_browser_process_handler! {
                 .cloned()
                 .collect();
 
-            // Track only the first service ID for browser-to-service matching.
-            // Additional services are created lazily on activation.
-            let first_id: Vec<String> = services.iter().take(1).map(|s| s.id.clone()).collect();
+            // Browser→id association is done per-client (see new_client_for):
+            // each browser-creating client carries its intended id, so we no
+            // longer seed the fragile FIFO queue here.
             drop(state_guard);
-
-            {
-                let mut s = state.lock();
-                s.pending_service_ids = first_id;
-            }
 
             // Build the sidebar URL (inject the shared Aurora theme).
             let sidebar_html = with_theme(include_str!("../../../resources/sidebar.html"));
@@ -480,7 +475,18 @@ p{color:var(--text-muted);font-size:15px;line-height:1.55;margin:0 0 6px}
             };
             let mut request_context = request_context_create_context(Some(&rc_settings), None);
 
-            let mut content_client = self.client.borrow().clone();
+            // When there's a first service, give the content browser a client
+            // that knows its id (robust registration). The welcome page (no
+            // services) uses the default client and registers nothing.
+            let mut content_client = if services.is_empty() {
+                self.client.borrow().clone()
+            } else {
+                Some(OmniChatClient::new_client_for(
+                    state.clone(),
+                    router.clone(),
+                    &services[0].id,
+                ))
+            };
             let mut content_delegate = ContentBrowserViewDelegate::new();
             let content_view = browser_view_create(
                 content_client.as_mut(),
@@ -574,7 +580,7 @@ pub fn create_service_browser_view(state: &SharedState, service_id: &str) -> Opt
         s.message_router.clone()
     };
     let mut client = match router {
-        Some(r) => OmniChatClient::new_client(state.clone(), r),
+        Some(r) => OmniChatClient::new_client_for(state.clone(), r, service_id),
         None => return None,
     };
 
@@ -591,7 +597,8 @@ pub fn create_service_browser_view(state: &SharedState, service_id: &str) -> Opt
     if let Some(ref view) = bv {
         let mut s = state.lock();
         s.browser_views.insert(service_id.to_string(), view.clone());
-        s.pending_service_ids.push(service_id.to_string());
+        // on_after_created registers browsers[service_id] via the client's
+        // intended_id (no FIFO — see new_client_for / life_span).
     }
 
     bv
@@ -670,11 +677,22 @@ pub fn show_overlay(state: &SharedState, html: &str) {
         s.browsers.get(OVERLAY_ID).cloned()
     };
     if let Some(browser) = existing {
-        if let Some(frame) = browser.main_frame() {
-            let url = CefString::from(data_uri.as_str());
-            frame.load_url(Some(&url));
-        }
+        // Re-attach the overlay view so it's visible again...
         swap_to_overlay(state);
+        // ...then navigate it RENDERER-side (execute_java_script), NOT
+        // frame.load_url(). load_url calls CEF's RequestFocusSync(), which
+        // dereferences the BrowserView's Widget; right after a re-add the Widget
+        // isn't bound yet, so load_url segfaults (browser_view_impl.cc
+        // RequestFocusSync -> Widget::IsMinimized on a dead weak_ptr). A JS
+        // location.replace runs in the renderer and refreshes the overlay content
+        // without touching host-side focus. The data: URI is pure base64 (no
+        // quotes/backslashes), so single-quote wrapping is safe.
+        if let Some(frame) = browser.main_frame() {
+            let js = format!("location.replace('{data_uri}')");
+            let js = CefString::from(js.as_str());
+            let nav_url = CefString::from("omnichat://overlay-nav");
+            frame.execute_java_script(Some(&js), Some(&nav_url), 0);
+        }
         return;
     }
 
@@ -687,7 +705,7 @@ pub fn show_overlay(state: &SharedState, html: &str) {
         s.message_router.clone()
     };
     let mut client = match router {
-        Some(r) => OmniChatClient::new_client(state.clone(), r),
+        Some(r) => OmniChatClient::new_client_for(state.clone(), r, OVERLAY_ID),
         None => return,
     };
     let mut delegate = ContentBrowserViewDelegate::new();
@@ -702,8 +720,8 @@ pub fn show_overlay(state: &SharedState, html: &str) {
     if let Some(ref view) = bv {
         let mut s = state.lock();
         s.browser_views.insert(OVERLAY_ID.to_string(), view.clone());
-        // on_after_created maps this to browsers[OVERLAY_ID]; see life_span.
-        s.pending_service_ids.push(OVERLAY_ID.to_string());
+        // on_after_created registers browsers[OVERLAY_ID] via the client's
+        // intended_id (no FIFO — see new_client_for / life_span).
     }
     swap_to_overlay(state);
 }

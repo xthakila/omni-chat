@@ -9,6 +9,7 @@ use crate::app::SharedState;
 wrap_life_span_handler! {
     pub struct ServiceLifeSpanHandler {
         state: SharedState,
+        intended_id: Option<String>,
     }
 
     impl LifeSpanHandler {
@@ -21,28 +22,37 @@ wrap_life_span_handler! {
             };
             let mut state = self.state.lock();
 
-            // Match browser to service by pending_service_ids order.
-            // Each browser_host_create_browser call fires on_after_created in order.
-            let service_id = if !state.pending_service_ids.is_empty() {
-                Some(state.pending_service_ids.remove(0))
-            } else {
-                // Fallback: try URL matching.
-                let main_frame = browser.main_frame();
-                let url = main_frame
-                    .as_ref()
-                    .map(|f| CefString::from(&f.url()).to_string())
-                    .unwrap_or_default();
+            // PRIMARY: the client knows exactly which id this browser is for.
+            // This is robust against CEF's async browser-creation order (a FIFO
+            // queue mis-assigns when, e.g., the overlay's tiny data: URI realizes
+            // before a previously-queued service browser, stealing its id and
+            // breaking the overlay's trusted classification).
+            let service_id = match &self.intended_id {
+                // First browser from this client wins the id (guards against a
+                // popup from the same client re-registering under it).
+                Some(id) if !state.browsers.contains_key(id) => Some(id.clone()),
+                // FALLBACK (no intended id, or already taken): legacy FIFO, then URL.
+                _ if !state.pending_service_ids.is_empty() => {
+                    Some(state.pending_service_ids.remove(0))
+                }
+                _ => {
+                    let main_frame = browser.main_frame();
+                    let url = main_frame
+                        .as_ref()
+                        .map(|f| CefString::from(&f.url()).to_string())
+                        .unwrap_or_default();
 
-                state
-                    .service_manager
-                    .services()
-                    .iter()
-                    .find(|s| {
-                        let svc_url = s.effective_url();
-                        !state.browsers.contains_key(&s.id)
-                            && (url.contains(&svc_url) || svc_url.contains(&url))
-                    })
-                    .map(|s| s.id.clone())
+                    state
+                        .service_manager
+                        .services()
+                        .iter()
+                        .find(|s| {
+                            let svc_url = s.effective_url();
+                            !state.browsers.contains_key(&s.id)
+                                && (url.contains(&svc_url) || svc_url.contains(&url))
+                        })
+                        .map(|s| s.id.clone())
+                }
             };
 
             if let Some(id) = &service_id {
