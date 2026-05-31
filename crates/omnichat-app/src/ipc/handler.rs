@@ -299,70 +299,7 @@ pub fn handle_message(state: &SharedState, raw: &str, sender_id: Option<i32>) {
         }
 
         IpcMessage::ActivateService { service_id } => {
-            info!("Activating service: {service_id}");
-
-            // Background the previously active service.
-            {
-                let mut s = state.lock();
-                if let Some(ref prev_id) = s.active_service_id.clone() {
-                    if prev_id != &service_id {
-                        s.service_manager.set_lifecycle_state(
-                            prev_id,
-                            crate::service::state::ServiceLifecycleState::Backgrounded,
-                        );
-                    }
-                }
-            }
-
-            // If the service has no BrowserView yet, create one. If it was
-            // hibernated (its page discarded to about:blank), capture the real
-            // URL so we can reload it after the swap.
-            let (needs_creation, reload_url) = {
-                let s = state.lock();
-                let needs = !s.browser_views.contains_key(&service_id);
-                let hibernated = s
-                    .service_manager
-                    .get_runtime(&service_id)
-                    .map(|r| r.lifecycle)
-                    == Some(crate::service::state::ServiceLifecycleState::Hibernated);
-                let url = if hibernated && !needs {
-                    s.service_manager.get_config(&service_id).map(|cfg| {
-                        let recipe_url = s
-                            .recipes
-                            .get(&cfg.recipe_id)
-                            .map(|r| r.service_url.as_str())
-                            .unwrap_or("");
-                        cfg.effective_url_with_recipe(recipe_url)
-                    })
-                } else {
-                    None
-                };
-                (needs, url)
-            };
-            if needs_creation {
-                crate::app::create_service_browser_view(state, &service_id);
-            }
-
-            // Swap the displayed view.
-            crate::app::swap_content_view(state, &service_id);
-
-            // If the page was discarded (about:blank), reload the real URL now.
-            if let Some(url) = reload_url {
-                let browser = {
-                    let s = state.lock();
-                    s.browsers.get(&service_id).cloned()
-                };
-                if let Some(b) = browser {
-                    if let Some(frame) = b.main_frame() {
-                        info!("Reloading hibernated service {service_id}");
-                        let u = cef::CefString::from(url.as_str());
-                        frame.load_url(Some(&u));
-                    }
-                }
-            }
-
-            let s = state.lock();
-            push_sidebar_state(&s);
+            activate_and_show(state, service_id);
         }
 
         IpcMessage::AddService {
@@ -582,6 +519,78 @@ pub fn handle_message(state: &SharedState, raw: &str, sender_id: Option<i32>) {
             }
         }
     }
+}
+
+/// Switch the displayed service: background the previously active one, create
+/// its BrowserView if needed, swap it into view, reload it if its page was
+/// discarded by hibernation, then refresh the sidebar. Shared by the
+/// ActivateService IPC and the tray quick-switch menu. Must run on the CEF UI
+/// thread (it performs view operations).
+pub(crate) fn activate_and_show(state: &SharedState, service_id: String) {
+    info!("Activating service: {service_id}");
+
+    // Background the previously active service.
+    {
+        let mut s = state.lock();
+        if let Some(ref prev_id) = s.active_service_id.clone() {
+            if prev_id != &service_id {
+                s.service_manager.set_lifecycle_state(
+                    prev_id,
+                    crate::service::state::ServiceLifecycleState::Backgrounded,
+                );
+            }
+        }
+    }
+
+    // If the service has no BrowserView yet, create one. If it was
+    // hibernated (its page discarded to about:blank), capture the real
+    // URL so we can reload it after the swap.
+    let (needs_creation, reload_url) = {
+        let s = state.lock();
+        let needs = !s.browser_views.contains_key(&service_id);
+        let hibernated = s
+            .service_manager
+            .get_runtime(&service_id)
+            .map(|r| r.lifecycle)
+            == Some(crate::service::state::ServiceLifecycleState::Hibernated);
+        let url = if hibernated && !needs {
+            s.service_manager.get_config(&service_id).map(|cfg| {
+                let recipe_url = s
+                    .recipes
+                    .get(&cfg.recipe_id)
+                    .map(|r| r.service_url.as_str())
+                    .unwrap_or("");
+                cfg.effective_url_with_recipe(recipe_url)
+            })
+        } else {
+            None
+        };
+        (needs, url)
+    };
+    if needs_creation {
+        crate::app::create_service_browser_view(state, &service_id);
+    }
+
+    // Swap the displayed view.
+    crate::app::swap_content_view(state, &service_id);
+
+    // If the page was discarded (about:blank), reload the real URL now.
+    if let Some(url) = reload_url {
+        let browser = {
+            let s = state.lock();
+            s.browsers.get(&service_id).cloned()
+        };
+        if let Some(b) = browser {
+            if let Some(frame) = b.main_frame() {
+                info!("Reloading hibernated service {service_id}");
+                let u = cef::CefString::from(url.as_str());
+                frame.load_url(Some(&u));
+            }
+        }
+    }
+
+    let s = state.lock();
+    push_sidebar_state(&s);
 }
 
 /// Push current service state to the sidebar browser.

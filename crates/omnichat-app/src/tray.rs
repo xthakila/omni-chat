@@ -1,10 +1,30 @@
+use cef::*;
 use log::{debug, info, warn};
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::mpsc;
 use tray_icon::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
 use tray_icon::{Icon, TrayIconBuilder};
 
 static BADGE_COUNT: AtomicU32 = AtomicU32::new(0);
+
+// One-shot CEF task that switches to a service on the UI thread. Posted from the
+// tray's menu-event thread (which is NOT a CEF thread) so the view operations in
+// activate_and_show run where CEF requires them.
+wrap_task! {
+    struct TrayActivateTask {
+        service_id: String,
+    }
+
+    impl Task {
+        fn execute(&self) {
+            crate::ipc::handler::activate_and_show(
+                &crate::app::shared_state(),
+                self.service_id.clone(),
+            );
+        }
+    }
+}
 
 /// Channel to send badge updates to the tray icon thread.
 static BADGE_SENDER: std::sync::OnceLock<mpsc::Sender<u32>> = std::sync::OnceLock::new();
@@ -98,9 +118,33 @@ pub fn init() {
     }
     let menu = Menu::new();
     let show_item = MenuItem::new("Show OmniChat", true, None);
-    let quit_item = MenuItem::new("Quit", true, None);
     let _ = menu.append(&show_item);
     let _ = menu.append(&PredefinedMenuItem::separator());
+
+    // One item per service for quick-switching. This is a SNAPSHOT taken at
+    // startup: services added/removed later won't change this menu (a leaked
+    // tray-icon menu can't be safely rebuilt live). The rail remains the
+    // always-current switcher; the tray is a convenience for launch-time services.
+    let mut svc_map: HashMap<tray_icon::menu::MenuId, String> = HashMap::new();
+    let services: Vec<(String, String)> = {
+        let st = crate::app::shared_state();
+        let g = st.lock();
+        g.service_manager
+            .sorted_services()
+            .iter()
+            .map(|c| (c.id.clone(), c.name.clone()))
+            .collect()
+    };
+    for (id, name) in &services {
+        let item = MenuItem::new(name, true, None);
+        let _ = menu.append(&item);
+        svc_map.insert(item.id().clone(), id.clone());
+    }
+    if !services.is_empty() {
+        let _ = menu.append(&PredefinedMenuItem::separator());
+    }
+
+    let quit_item = MenuItem::new("Quit", true, None);
     let _ = menu.append(&quit_item);
 
     let icon = generate_icon(0);
@@ -126,13 +170,36 @@ pub fn init() {
     let _ = BADGE_SENDER.set(tx);
 
     let quit_id = quit_item.id().clone();
+    let show_id = show_item.id().clone();
 
-    // Menu event handler thread.
+    // Menu event handler thread. Maps a clicked item to: quit, a service
+    // quick-switch, or Show (re-activate the current/first service). Service
+    // activation is posted to the CEF UI thread via TrayActivateTask.
     std::thread::spawn(move || loop {
         if let Ok(event) = MenuEvent::receiver().recv() {
             if event.id == quit_id {
                 info!("Quit requested from tray");
                 std::process::exit(0);
+            } else if let Some(sid) = svc_map.get(&event.id) {
+                info!("Tray quick-switch to service: {sid}");
+                let mut task = TrayActivateTask::new(sid.clone());
+                post_delayed_task(ThreadId::UI, Some(&mut task), 0);
+            } else if event.id == show_id {
+                // Best-effort "Show": bring the active (or first) service forward.
+                let target = {
+                    let st = crate::app::shared_state();
+                    let g = st.lock();
+                    g.active_service_id.clone().or_else(|| {
+                        g.service_manager
+                            .sorted_services()
+                            .first()
+                            .map(|c| c.id.clone())
+                    })
+                };
+                if let Some(sid) = target {
+                    let mut task = TrayActivateTask::new(sid);
+                    post_delayed_task(ThreadId::UI, Some(&mut task), 0);
+                }
             }
         }
     });

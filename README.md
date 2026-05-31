@@ -26,7 +26,7 @@ Ferdium uses Electron + React + MobX + AdonisJS + SQLite ORM + many simultaneous
 - **Session isolation** — separate cookies, localStorage, IndexedDB per service via CEF RequestContext
 - **Background notifications** — lifecycle-aware polling (2s active, 5s background)
 - **Recipe injection** — full Ferdium API shim (setBadge, loop, onNotify, injectCSS, etc.)
-- **System tray** icon with unread badge
+- **System tray** icon with unread badge + a quick-switch menu (one entry per service, snapshot at launch)
 - **Frameless window** with custom title bar
 - **Do Not Disturb** mode
 - **SQLite persistence** — services and settings survive restarts
