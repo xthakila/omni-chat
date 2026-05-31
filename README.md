@@ -91,6 +91,17 @@ omnichat
 
 Or find **OmniChat** in your application launcher.
 
+### Debugging
+
+Set `OMNICHAT_REMOTE_DEBUG_PORT` to expose CEF's DevTools protocol for the app's
+own pages (off by default). Pair it with `--remote-allow-origins` (required by
+recent Chromium for the WebSocket upgrade):
+
+```bash
+OMNICHAT_REMOTE_DEBUG_PORT=9222 omnichat --remote-allow-origins='*'
+# then: curl http://127.0.0.1:9222/json   (or attach chrome://inspect)
+```
+
 ## Architecture
 
 ```

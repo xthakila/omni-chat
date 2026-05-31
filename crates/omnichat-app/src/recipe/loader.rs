@@ -61,6 +61,13 @@ pub fn scan_recipes(dirs: &[(PathBuf, bool)]) -> Vec<Recipe> {
 
     for (dir, trusted) in dirs {
         info!("Scanning recipes in: {} (trusted={trusted})", dir.display());
+        // Canonicalize the trusted root so we can detect a symlinked recipe
+        // subdir that escapes it (smuggling untrusted content in as trusted).
+        let canonical_root = if *trusted {
+            dir.canonicalize().ok()
+        } else {
+            None
+        };
         let entries = match std::fs::read_dir(dir) {
             Ok(e) => e,
             Err(e) => {
@@ -75,7 +82,22 @@ pub fn scan_recipes(dirs: &[(PathBuf, bool)]) -> Vec<Recipe> {
                 continue;
             }
 
-            match load_recipe(&path, *trusted) {
+            // A recipe only inherits trust if it PHYSICALLY lives under the
+            // trusted root. A symlink resolving outside it (or a path we can't
+            // canonicalize) is downgraded to untrusted — so injectJSUnsafe stays
+            // gated even if someone drops a symlink into a bundled recipes dir.
+            let entry_trusted = match (&canonical_root, path.canonicalize()) {
+                (Some(root), Ok(real)) => real.starts_with(root),
+                _ => false,
+            };
+            if *trusted && !entry_trusted {
+                warn!(
+                    "Recipe dir {} escapes its trusted root; treating as untrusted",
+                    path.display()
+                );
+            }
+
+            match load_recipe(&path, entry_trusted) {
                 Ok(recipe) => {
                     if seen.contains_key(&recipe.id) {
                         debug!("Skipping duplicate recipe: {}", recipe.id);
@@ -172,4 +194,52 @@ fn load_recipe(dir: &Path, trusted: bool) -> Result<Recipe, String> {
         webview_js,
         darkmode_css,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    fn write_recipe(dir: &Path, id: &str) {
+        fs::create_dir_all(dir).unwrap();
+        fs::write(
+            dir.join("package.json"),
+            format!(
+                r#"{{"id":"{id}","name":"{id}","config":{{"serviceURL":"https://{id}.example"}}}}"#
+            ),
+        )
+        .unwrap();
+    }
+
+    // A normal in-tree recipe inherits trust; a symlinked recipe whose real path
+    // escapes the trusted root must be downgraded to untrusted.
+    #[test]
+    #[cfg(unix)]
+    fn symlinked_recipe_escaping_trusted_root_is_untrusted() {
+        let base = std::env::temp_dir().join(format!("oc-loader-symlink-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        let root = base.join("trusted_root");
+        let outside = base.join("outside");
+        write_recipe(&root.join("good"), "good");
+        write_recipe(&outside.join("evil"), "evil");
+        std::os::unix::fs::symlink(outside.join("evil"), root.join("evil")).unwrap();
+
+        let recipes = scan_recipes(&[(root.clone(), true)]);
+        let good = recipes
+            .iter()
+            .find(|r| r.id == "good")
+            .expect("good loaded");
+        assert!(good.trusted, "in-tree recipe should be trusted");
+        let evil = recipes
+            .iter()
+            .find(|r| r.id == "evil")
+            .expect("evil loaded");
+        assert!(
+            !evil.trusted,
+            "a recipe symlinked outside the trusted root must NOT be trusted"
+        );
+
+        let _ = fs::remove_dir_all(&base);
+    }
 }

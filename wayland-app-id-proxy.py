@@ -14,6 +14,7 @@ import threading
 import signal
 import array
 import uuid
+import time
 
 APP_ID = b"omnichat"
 XDG_TOPLEVEL_SET_APP_ID_OPCODE = 3  # opcode 0=destroy, 1=set_parent, 2=set_title, 3=set_app_id
@@ -188,7 +189,14 @@ def main():
             pass
         run_direct()
 
+    # Periodic accept() timeout + a flag so the accept loop exits promptly and
+    # cleanly on shutdown (rather than relying on close() interrupting a blocked
+    # accept(), which isn't guaranteed on every platform).
+    shutting_down = threading.Event()
+    server.settimeout(1.0)
+
     def cleanup(sig=None, frame=None):
+        shutting_down.set()
         try:
             proc.terminate()
         except Exception:
@@ -208,16 +216,29 @@ def main():
     signal.signal(signal.SIGTERM, cleanup)
 
     def accept_loop():
-        while True:
+        while not shutting_down.is_set():
             try:
                 client, _ = server.accept()
-                threading.Thread(target=handle_client, args=(client, real_path), daemon=True).start()
+            except socket.timeout:
+                continue
             except OSError:
                 break
+            # The server's accept-timeout is inherited by accepted sockets; reset
+            # to blocking so the FD-passing recv loop in handle_client is unaffected.
+            client.settimeout(None)
+            threading.Thread(target=handle_client, args=(client, real_path), daemon=True).start()
 
     threading.Thread(target=accept_loop, daemon=True).start()
-    proc.wait()
-    cleanup()
+
+    # Poll the child (non-blocking) rather than a single blocking wait(), then
+    # FORCE-exit: os._exit guarantees the proxy dies with the app even if a
+    # daemon worker thread is wedged mid-recv, so it can never linger.
+    try:
+        while proc.poll() is None:
+            time.sleep(0.5)
+    finally:
+        cleanup()
+    os._exit(proc.returncode or 0)
 
 if __name__ == "__main__":
     main()
