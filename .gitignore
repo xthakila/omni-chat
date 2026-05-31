@@ -2,3 +2,7 @@
 *.so
 # Cargo.lock is tracked: this is a shipping binary, so we want reproducible builds.
 /recipes/
+
+# Python bytecode (from py_compile / proxy)
+__pycache__/
+*.pyc
