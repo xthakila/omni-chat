@@ -1,8 +1,8 @@
 # OmniChat
 
-A lightweight messaging aggregator built with Rust and CEF (Chromium Embedded Framework). A native, ~6 MB shell that runs [Ferdium](https://ferdium.org)-compatible recipes — far smaller than Ferdium's Electron app. (Recipes are not bundled; see [Recipes](#recipe-compatibility).)
+A lightweight messaging aggregator built with Rust and CEF (Chromium Embedded Framework). A native, ~7 MB shell that runs [Ferdium](https://ferdium.org)-compatible recipes — far smaller than Ferdium's Electron app. (Recipes are not bundled; see [Recipes](#recipe-compatibility).)
 
-![OmniChat](https://img.shields.io/badge/binary-6.3MB-brightgreen) ![Recipes](https://img.shields.io/badge/recipes-Ferdium--compatible-blue) ![Platform](https://img.shields.io/badge/platform-Linux%20x86__64-lightgrey)
+![OmniChat](https://img.shields.io/badge/binary-6.8MB-brightgreen) ![Recipes](https://img.shields.io/badge/recipes-Ferdium--compatible-blue) ![Platform](https://img.shields.io/badge/platform-Linux%20x86__64-lightgrey)
 
 ## Why?
 
@@ -10,10 +10,10 @@ Ferdium uses Electron + React + MobX + AdonisJS + SQLite ORM + many simultaneous
 
 | | Ferdium | OmniChat |
 |---|---|---|
-| Binary size | ~400 MB | **6.3 MB** (release, stripped) |
+| Binary size | ~400 MB | **6.8 MB** (release, stripped) |
 | Runtime | Electron (Node.js + Chromium) | Rust + CEF |
 | Startup (to first paint) | 5–15 s | **~0.4–0.9 s** (measured, Wayland/GNOME) |
-| RAM | 3–4 GB | **~0.8 GB PSS / ~1.5 GB RSS** for 3 services (measured) |
+| RAM | 3–4 GB | **~0.7–1.0 GB PSS / ~1.5–1.9 GB RSS** for 3 services (measured; one Chromium renderer each, so it scales like that many browser tabs) |
 | Recipes | 409 bundled | Ferdium-compatible (bring your own) |
 
 > Performance figures are measured on the dev machine (Ubuntu/GNOME/Wayland, software-rendered) via `scripts/rss-sampler.sh` and the `OMNICHAT_TIMING` startup timer — not synthetic. RAM is CEF/Chromium-dominated (one renderer process per service), so it scales with the number of live services. Backgrounded services are hidden (`was_hidden`) so Chromium throttles them, and after a longer idle they are **discarded** (`about:blank`) to free the page heap — see the lifecycle table + [Known Limitations](#known-limitations).
@@ -128,7 +128,7 @@ Rust Application (Browser Process)
 - **State Mutex discipline** — a non-poisoning `parking_lot::Mutex`; never held during CEF view operations (add/remove child views) to prevent deadlock
 - **IPC trust boundary** — every browser is classified (sidebar / overlay / service) by `Browser::identifier()`; privileged commands are gated to trusted surfaces (see [Security](#security))
 - **Trusted overlay** — picker/settings render in a dedicated overlay BrowserView over the content area, so the active service's session is preserved (not navigated away)
-- **Wayland app_id** — CEF Alloy emits an empty `xdg_toplevel.set_app_id("")` and ignores the in-code hints; `wayland-app-id-proxy.py` is a protocol-proxy attempt but is not yet wired into the launcher (see [Known Limitations](#known-limitations))
+- **Wayland app_id** — CEF Alloy emits an empty `xdg_toplevel.set_app_id("")` and ignores the in-code hints; `wayland-app-id-proxy.py` rewrites it to `omnichat` and is wired into the launcher on Wayland (with a direct-exec fallback). Verified under a wlroots compositor: `app_id` goes from `''` to `omnichat`
 
 ### Project Structure
 
@@ -136,7 +136,7 @@ Rust Application (Browser Process)
 omnichat/
 ├── Cargo.toml                    # Workspace root
 ├── crates/
-│   ├── omnichat-app/             # Main binary (6.3 MB release)
+│   ├── omnichat-app/             # Main binary (6.8 MB release)
 │   │   └── src/
 │   │       ├── main.rs           # CEF init, single instance, message loop
 │   │       ├── app.rs            # CefApp, window delegate, BrowserView management
@@ -205,7 +205,7 @@ CommonJS polyfills: `require('path')`, `require('fs')` (reads from a small per-r
 ## Known Limitations
 
 - **GNOME Wayland taskbar icon.** CEF's Alloy runtime sends an empty `xdg_toplevel.set_app_id("")` and ignores the in-code `LinuxWindowProperties` / `--class` hints, so GNOME can't match the window to `omnichat.desktop` (generic icon). The bundled `wayland-app-id-proxy.py` is a protocol-proxy approach to this but is **not yet wired into the launcher**. The in-window and tray icons are correct.
-- **Hibernation = page discard.** Idle services (after `OMNICHAT_HIBERNATE_SECS`) discard their page by navigating to `about:blank`, freeing the page's DOM/JS heap — the bulk of a service's RAM — while keeping the browser + view alive (so switching stays instant, no dead pane). Reactivation reloads the real URL; the persistent per-service profile restores the login. (`close_browser()` is NOT used — it can't tear down a CEF-Views `BrowserView`-backed browser. Trade-off: unsaved page state, e.g. a half-typed message, is lost once a service has been idle long enough to discard.)
+- **Hibernation = page discard.** Idle services (after `OMNICHAT_HIBERNATE_SECS`) discard their page by navigating to `about:blank`, freeing the page's DOM/JS heap (**~60–130 MB/service reclaimed, measured**) while keeping the browser + view alive (so switching stays instant, no dead pane). The renderer **process** persists, so this is a partial reclaim — not the service's full footprint — and the freed memory returns to Chromium's allocator (so RSS may not shrink immediately). Reactivation reloads the real URL; the persistent per-service profile restores the login. (`close_browser()` is NOT used — it can't tear down a CEF-Views `BrowserView`-backed browser. Trade-off: unsaved page state, e.g. a half-typed message, is lost once a service has been idle long enough to discard.)
 - **CEF runtime required.** A ~300 MB CEF binary distribution must be installed separately (`export-cef-dir`).
 - **Recipes not bundled** (see above) and **no runtime `fs`** for recipes.
 - **Testing.** 20 unit tests cover the pure logic (URL allowlist, IPC parsing, URL decode, service-URL resolution, DB round-trips), run in CI. Service-by-service compatibility is spot-checked manually, not automated.
