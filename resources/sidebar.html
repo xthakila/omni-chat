@@ -340,6 +340,13 @@
         .ctx-item:hover { background: var(--bg-hover); }
         .ctx-item.danger { color: var(--red); }
         .ctx-item.danger:hover { background: rgba(243,139,168,0.1); }
+
+        /* Drag-to-reorder feedback */
+        .svc-wrapper.dragging { opacity: .35; }
+        .svc-wrapper.drop-above::after {
+            content: ''; position: absolute; left: 12px; right: 12px; top: -1px;
+            height: 3px; background: var(--accent); border-radius: 2px;
+        }
     </style>
 </head>
 <body>
@@ -389,6 +396,7 @@
         var services = [];
         var activeServiceId = null;
         var badges = {};
+        var dragId = null;
 
         var PALETTE = [
             'var(--blue)', 'var(--green)', 'var(--peach)', 'var(--pink)',
@@ -500,6 +508,48 @@
                     menu.style.left = (e.clientX) + 'px';
                     menu.style.top = (e.clientY) + 'px';
                     menu.classList.add('open');
+                });
+
+                // Drag to reorder (-> reorder_services IPC)
+                wrapper.draggable = true;
+                wrapper.addEventListener('dragstart', function(e) {
+                    dragId = svc.id;
+                    wrapper.classList.add('dragging');
+                    if (e.dataTransfer) {
+                        e.dataTransfer.effectAllowed = 'move';
+                        e.dataTransfer.setData('text/plain', svc.id);
+                    }
+                });
+                wrapper.addEventListener('dragend', function() {
+                    dragId = null;
+                    var all = document.querySelectorAll('.svc-wrapper');
+                    for (var i = 0; i < all.length; i++) {
+                        all[i].classList.remove('dragging', 'drop-above');
+                    }
+                });
+                wrapper.addEventListener('dragover', function(e) {
+                    if (!dragId || dragId === svc.id) return;
+                    e.preventDefault();
+                    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+                    wrapper.classList.add('drop-above');
+                });
+                wrapper.addEventListener('dragleave', function() {
+                    wrapper.classList.remove('drop-above');
+                });
+                wrapper.addEventListener('drop', function(e) {
+                    e.preventDefault();
+                    wrapper.classList.remove('drop-above');
+                    if (!dragId || dragId === svc.id) return;
+                    var from = -1, to = -1, i;
+                    for (i = 0; i < services.length; i++) {
+                        if (services[i].id === dragId) from = i;
+                        if (services[i].id === svc.id) to = i;
+                    }
+                    if (from < 0 || to < 0) return;
+                    var moved = services.splice(from, 1)[0];
+                    services.splice(to, 0, moved);
+                    sendIPC({ type: 'reorder_services', serviceIds: services.map(function(s) { return s.id; }) });
+                    render();
                 });
 
                 list.appendChild(wrapper);

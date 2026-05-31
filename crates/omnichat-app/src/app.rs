@@ -608,6 +608,10 @@ pub fn swap_content_view(state: &SharedState, new_service_id: &str) {
         if let Some(ref lay) = layout {
             lay.set_flex_for_view(Some(&mut new_view), 1);
         }
+        // Focus the newly shown view so keyboard + mouse input route to it.
+        // Without this, switching to a service or opening the overlay leaves the
+        // new view unfocused until the user clicks it.
+        new_view.request_focus();
     }
 
     // 3. Update state after CEF operations.
@@ -713,6 +717,10 @@ fn swap_to_overlay(state: &SharedState) {
         if let Some(ref lay) = layout {
             lay.set_flex_for_view(Some(&mut new_view), 1);
         }
+        // Focus the newly shown view so keyboard + mouse input route to it.
+        // Without this, switching to a service or opening the overlay leaves the
+        // new view unfocused until the user clicks it.
+        new_view.request_focus();
     }
 
     let mut s = state.lock();

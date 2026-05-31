@@ -587,6 +587,16 @@ h2 {{ font-size:12px; font-weight:700; color:var(--dm); text-transform:uppercase
 .toggle::after {{ content:''; width:18px; height:18px; background:#fff; border-radius:50%; position:absolute; top:3px; left:3px; transition:transform .2s; }}
 .toggle.on::after {{ transform:translateX(18px); }}
 .empty {{ color:var(--dm); font-size:13px; padding:8px 2px; }}
+.svc-name {{ cursor:text; }}
+.name-input {{ flex:1; font-size:14px; font-weight:600; background:var(--surface-sunken); border:1px solid var(--ac); border-radius:6px; color:var(--tx); padding:3px 8px; outline:none; min-width:0; }}
+.ctrls {{ display:flex; align-items:center; gap:5px; flex-shrink:0; }}
+.mv-btn {{ width:24px; height:24px; border:1px solid var(--border-strong); background:none; color:var(--dm); border-radius:6px; cursor:pointer; font-size:12px; line-height:1; padding:0; }}
+.mv-btn:hover:not(:disabled) {{ border-color:var(--ac); color:var(--ac); }}
+.mv-btn:disabled {{ opacity:.3; cursor:default; }}
+.chip {{ border:1px solid var(--border-strong); background:none; color:var(--dm); border-radius:var(--r-pill); padding:3px 9px; font-size:11px; font-weight:600; cursor:pointer; transition:all .12s; }}
+.chip:hover {{ border-color:var(--text-faint); }}
+.chip.on {{ background:var(--accent-soft); border-color:var(--ac); color:var(--ac); }}
+.sep {{ width:1px; height:18px; background:var(--border-subtle); margin:0 2px; }}
 </style></head>
 <body>
 <h1>Settings</h1>
@@ -599,6 +609,54 @@ h2 {{ font-size:12px; font-weight:700; color:var(--dm); text-transform:uppercase
 var services = {services};
 var settings = {settings};
 function sendIPC(msg) {{ window.location.href = 'omnichat-ipc://' + encodeURIComponent(JSON.stringify(msg)); }}
+function mvBtn(label, disabled, fn) {{
+    var b = document.createElement('button'); b.className = 'mv-btn'; b.textContent = label;
+    b.disabled = disabled; if (!disabled) b.addEventListener('click', fn); return b;
+}}
+function sepEl() {{ var d = document.createElement('div'); d.className = 'sep'; return d; }}
+function chip(label, on, fn) {{
+    var c = document.createElement('button'); c.className = 'chip' + (on ? ' on' : ''); c.textContent = label;
+    c.addEventListener('click', function() {{ var nv = !c.classList.contains('on'); c.classList.toggle('on', nv); fn(nv); }});
+    return c;
+}}
+function setFlag(s, flag, value) {{
+    sendIPC({{ type:'set_service_flag', serviceId:s.id, flag:flag, value:value }});
+    if (flag === 'muted') s.is_muted = value;
+    else if (flag === 'notifications') s.is_notification_enabled = value;
+    else if (flag === 'darkMode') s.is_dark_mode_enabled = value;
+}}
+function moveSvc(from, to) {{
+    if (to < 0 || to >= services.length) return;
+    var m = services.splice(from, 1)[0]; services.splice(to, 0, m);
+    sendIPC({{ type:'reorder_services', serviceIds: services.map(function(x){{ return x.id; }}) }});
+    renderServices();
+}}
+function removeBtn(s) {{
+    var btn = document.createElement('button'); btn.className = 'rm-btn'; btn.textContent = 'Remove'; var armed = false;
+    btn.addEventListener('click', function() {{
+        if (!armed) {{
+            armed = true; btn.textContent = 'Confirm?'; btn.classList.add('armed');
+            setTimeout(function() {{ armed = false; btn.textContent = 'Remove'; btn.classList.remove('armed'); }}, 3000);
+            return;
+        }}
+        sendIPC({{ type:'remove_service', serviceId:s.id }});
+        services = services.filter(function(x){{ return x.id!==s.id; }}); renderServices();
+    }});
+    return btn;
+}}
+function startRename(s, nameEl, row) {{
+    var inp = document.createElement('input'); inp.className = 'name-input'; inp.value = s.name;
+    row.replaceChild(inp, nameEl); inp.focus(); inp.select();
+    var done = false;
+    function commit() {{
+        if (done) return; done = true;
+        var v = inp.value.trim();
+        if (v && v !== s.name) {{ s.name = v; sendIPC({{ type:'rename_service', serviceId:s.id, name:v }}); }}
+        renderServices();
+    }}
+    inp.addEventListener('keydown', function(e) {{ if (e.key === 'Enter') commit(); else if (e.key === 'Escape') {{ done = true; renderServices(); }} }});
+    inp.addEventListener('blur', commit);
+}}
 function renderServices() {{
     var el = document.getElementById('svcs');
     while(el.firstChild) el.removeChild(el.firstChild);
@@ -607,24 +665,22 @@ function renderServices() {{
         e.textContent = 'No services yet. Click + in the sidebar to add one.';
         el.appendChild(e); return;
     }}
-    services.forEach(function(s) {{
+    services.forEach(function(s, idx) {{
         var row = document.createElement('div'); row.className = 'svc-row';
         var ico = document.createElement('div'); ico.className = 'svc-ico';
         ico.textContent = (s.name || '?').charAt(0).toUpperCase();
-        var name = document.createElement('span'); name.className = 'svc-name'; name.textContent = s.name;
-        var recipe = document.createElement('span'); recipe.className = 'svc-recipe'; recipe.textContent = s.recipe_id;
-        var btn = document.createElement('button'); btn.className = 'rm-btn'; btn.textContent = 'Remove';
-        var armed = false;
-        btn.addEventListener('click', function() {{
-            if (!armed) {{
-                armed = true; btn.textContent = 'Confirm?'; btn.classList.add('armed');
-                setTimeout(function() {{ armed = false; btn.textContent = 'Remove'; btn.classList.remove('armed'); }}, 3000);
-                return;
-            }}
-            sendIPC({{ type:'remove_service', serviceId:s.id }});
-            services = services.filter(function(x){{ return x.id!==s.id; }}); renderServices();
-        }});
-        row.appendChild(ico); row.appendChild(name); row.appendChild(recipe); row.appendChild(btn);
+        var name = document.createElement('span'); name.className = 'svc-name'; name.textContent = s.name; name.title = 'Click to rename';
+        name.addEventListener('click', function() {{ startRename(s, name, row); }});
+        var ctrls = document.createElement('div'); ctrls.className = 'ctrls';
+        ctrls.appendChild(mvBtn('↑', idx === 0, function() {{ moveSvc(idx, idx - 1); }}));
+        ctrls.appendChild(mvBtn('↓', idx === services.length - 1, function() {{ moveSvc(idx, idx + 1); }}));
+        ctrls.appendChild(sepEl());
+        ctrls.appendChild(chip('Mute', !!s.is_muted, function(v) {{ setFlag(s, 'muted', v); }}));
+        ctrls.appendChild(chip('Notify', s.is_notification_enabled !== false, function(v) {{ setFlag(s, 'notifications', v); }}));
+        ctrls.appendChild(chip('Dark', !!s.is_dark_mode_enabled, function(v) {{ setFlag(s, 'darkMode', v); }}));
+        ctrls.appendChild(sepEl());
+        ctrls.appendChild(removeBtn(s));
+        row.appendChild(ico); row.appendChild(name); row.appendChild(ctrls);
         el.appendChild(row);
     }});
 }}
