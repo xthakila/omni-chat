@@ -1,5 +1,5 @@
 use cef::wrapper::message_router::*;
-use cef::{Browser, Frame, ImplBrowser, ImplBrowserHost, ImplFrame};
+use cef::{Browser, Frame, ImplBrowser, ImplBrowserHost, ImplFrame, ImplWindow};
 use log::{debug, info, warn};
 use serde::Deserialize;
 use std::sync::{Arc, Mutex};
@@ -147,6 +147,12 @@ pub enum IpcMessage {
         service_id: String,
         name: String,
     },
+
+    #[serde(rename = "reload_service")]
+    ReloadService {
+        #[serde(rename = "serviceId")]
+        service_id: String,
+    },
 }
 
 /// Handle an IPC message from a service webview.
@@ -179,6 +185,7 @@ pub fn handle_message(state: &SharedState, raw: &str, sender_id: Option<i32>) {
             | IpcMessage::UpdateSettings { .. }
             | IpcMessage::SetServiceFlag { .. }
             | IpcMessage::RenameService { .. }
+            | IpcMessage::ReloadService { .. }
     );
     if privileged && !trusted {
         warn!(
@@ -220,10 +227,19 @@ pub fn handle_message(state: &SharedState, raw: &str, sender_id: Option<i32>) {
             // Update the sidebar.
             push_sidebar_state(&s);
 
-            // Update the tray icon badge.
+            // Update the tray icon badge + window title (unread count).
             let total = s.service_manager.total_unread();
+            let window = s.main_window.clone();
             drop(s);
             crate::tray::update_badge(total);
+            if let Some(w) = window {
+                let title = if total > 0 {
+                    format!("OmniChat ({total})")
+                } else {
+                    "OmniChat".to_string()
+                };
+                w.set_title(Some(&cef::CefString::from(title.as_str())));
+            }
         }
 
         IpcMessage::Notification {
@@ -511,6 +527,19 @@ pub fn handle_message(state: &SharedState, raw: &str, sender_id: Option<i32>) {
                     push_sidebar_state(&s);
                 }
                 None => warn!("rename_service: unknown service '{service_id}'"),
+            }
+        }
+
+        IpcMessage::ReloadService { service_id } => {
+            info!("Reloading service: {service_id}");
+            let browser = {
+                let s = state.lock();
+                s.browsers.get(&service_id).cloned()
+            };
+            if let Some(b) = browser {
+                b.reload();
+            } else {
+                warn!("reload_service: no live browser for '{service_id}'");
             }
         }
     }

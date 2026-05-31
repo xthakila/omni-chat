@@ -580,38 +580,39 @@ pub fn create_service_browser_view(state: &SharedState, service_id: &str) -> Opt
 /// IMPORTANT: must not hold state lock during CEF view operations to avoid deadlock.
 pub fn swap_content_view(state: &SharedState, new_service_id: &str) {
     // 1. Gather everything we need from state, then drop the lock.
-    let (window, old_bv, new_bv, layout) = {
+    let (window, old_bv, new_bv, layout, already_displayed) = {
         let s = state.lock();
         let window = match s.main_window.as_ref() {
             Some(w) => w.clone(),
             None => return,
         };
+        let already_displayed = s.displayed_service_id.as_deref() == Some(new_service_id);
         let old_bv = s
             .displayed_service_id
             .as_ref()
             .and_then(|id| s.browser_views.get(id).cloned());
         let new_bv = s.browser_views.get(new_service_id).cloned();
         let layout = s.box_layout.clone();
-        (window, old_bv, new_bv, layout)
+        (window, old_bv, new_bv, layout, already_displayed)
     };
     // Lock is dropped here.
 
-    // 2. Do CEF view operations without holding the lock.
-    if let Some(ref old) = old_bv {
-        let mut old_view = View::from(old);
-        window.remove_child_view(Some(&mut old_view));
-    }
-
-    if let Some(ref new) = new_bv {
-        let mut new_view = View::from(new);
-        window.add_child_view(Some(&mut new_view));
-        if let Some(ref lay) = layout {
-            lay.set_flex_for_view(Some(&mut new_view), 1);
+    // 2. Do CEF view operations without holding the lock. Skip the remove/re-add
+    //    when the target is already displayed (re-activating the current service)
+    //    — churning the same view in/out is wasteful and can crash CEF.
+    if !already_displayed {
+        if let Some(ref old) = old_bv {
+            let mut old_view = View::from(old);
+            window.remove_child_view(Some(&mut old_view));
         }
-        // Focus the newly shown view so keyboard + mouse input route to it.
-        // Without this, switching to a service or opening the overlay leaves the
-        // new view unfocused until the user clicks it.
-        new_view.request_focus();
+
+        if let Some(ref new) = new_bv {
+            let mut new_view = View::from(new);
+            window.add_child_view(Some(&mut new_view));
+            if let Some(ref lay) = layout {
+                lay.set_flex_for_view(Some(&mut new_view), 1);
+            }
+        }
     }
 
     // 3. Update state after CEF operations.
@@ -717,10 +718,6 @@ fn swap_to_overlay(state: &SharedState) {
         if let Some(ref lay) = layout {
             lay.set_flex_for_view(Some(&mut new_view), 1);
         }
-        // Focus the newly shown view so keyboard + mouse input route to it.
-        // Without this, switching to a service or opening the overlay leaves the
-        // new view unfocused until the user clicks it.
-        new_view.request_focus();
     }
 
     let mut s = state.lock();

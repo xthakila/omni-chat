@@ -386,7 +386,8 @@
 
     <!-- Right-click context menu -->
     <div class="ctx-menu" id="ctxMenu">
-        <div class="ctx-item" id="ctxRemove">Remove service</div>
+        <div class="ctx-item" id="ctxReload">Reload</div>
+        <div class="ctx-item danger" id="ctxRemove">Remove service</div>
     </div>
 
     <script>
@@ -560,6 +561,8 @@
         document.addEventListener('keydown', function(e) {
             if (e.ctrlKey || e.metaKey) {
                 document.body.classList.add('show-kbd');
+                // (Ctrl/Cmd+R reload is handled natively by Chromium on the
+                // focused service; Reload is also in the right-click menu.)
                 var n = parseInt(e.key);
                 if (n >= 1 && n <= 9 && n - 1 < services.length) {
                     e.preventDefault();
@@ -702,6 +705,11 @@
             ctxServiceId = null;
         }
         document.addEventListener('click', closeCtxMenu);
+
+        document.getElementById('ctxReload').addEventListener('click', function() {
+            if (ctxServiceId) sendIPC({ type: 'reload_service', serviceId: ctxServiceId });
+            closeCtxMenu();
+        });
 
         document.getElementById('ctxRemove').addEventListener('click', function() {
             if (ctxServiceId) {
