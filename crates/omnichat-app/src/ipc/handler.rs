@@ -427,8 +427,14 @@ pub fn handle_message(state: &SharedState, raw: &str, sender_id: Option<i32>) {
             push_sidebar_state(&s);
         }
 
-        IpcMessage::UpdateSettings { settings } => {
+        IpcMessage::UpdateSettings { mut settings } => {
             info!("Updating settings via IPC");
+            // Clamp the free-form theme string to the known set so an invalid
+            // value can't be persisted (serde's default only fills a MISSING
+            // field, not a present-but-garbage one).
+            if !matches!(settings.theme.as_str(), "auto" | "light" | "dark") {
+                settings.theme = "auto".to_string();
+            }
             let mut s = state.lock();
             s.settings = settings;
             let snapshot = s.settings.clone();
@@ -490,6 +496,14 @@ pub fn handle_message(state: &SharedState, raw: &str, sender_id: Option<i32>) {
         }
 
         IpcMessage::RenameService { service_id, name } => {
+            // Defensively bound the name: trim + cap at 100 chars. The sender is
+            // trusted UI, but an oversized value would bloat memory, the DB row,
+            // and the sidebar JSON serialized on every update. Empty -> ignore.
+            let name: String = name.trim().chars().take(100).collect();
+            if name.is_empty() {
+                warn!("rename_service: empty name ignored for '{service_id}'");
+                return;
+            }
             info!("Rename service {service_id} -> {name}");
             let mut s = state.lock();
             let mut saved: Option<ServiceConfig> = None;
@@ -751,7 +765,7 @@ function removeBtn(s) {{
     return btn;
 }}
 function startRename(s, nameEl, row) {{
-    var inp = document.createElement('input'); inp.className = 'name-input'; inp.value = s.name;
+    var inp = document.createElement('input'); inp.className = 'name-input'; inp.value = s.name; inp.maxLength = 100;
     row.replaceChild(inp, nameEl); inp.focus(); inp.select();
     var done = false;
     function commit() {{

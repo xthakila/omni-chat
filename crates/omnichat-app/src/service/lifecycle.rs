@@ -142,41 +142,6 @@ impl LifecycleManager {
             }
         }
     }
-
-    /// Activate a service: bring it to Active state, background the previous one.
-    pub fn activate_service(state: &SharedState, service_id: &str) {
-        let mut s = state.lock();
-
-        // Background the currently active service.
-        if let Some(prev_id) = s.active_service_id.take() {
-            if prev_id != service_id {
-                if let Some(browser) = s.browsers.get(&prev_id) {
-                    if let Some(host) = browser.host() {
-                        host.was_hidden(1);
-                    }
-                }
-                s.service_manager
-                    .set_lifecycle_state(&prev_id, ServiceLifecycleState::Backgrounded);
-            }
-        }
-
-        // Activate the target service.
-        s.active_service_id = Some(service_id.to_string());
-
-        if let Some(browser) = s.browsers.get(service_id) {
-            if let Some(host) = browser.host() {
-                host.was_hidden(0);
-                host.set_audio_muted(0);
-            }
-        }
-
-        s.service_manager
-            .set_lifecycle_state(service_id, ServiceLifecycleState::Active);
-
-        if let Some(rt) = s.service_manager.get_runtime_mut(service_id) {
-            rt.touch();
-        }
-    }
 }
 
 // CEF task that runs the lifecycle manager periodically.

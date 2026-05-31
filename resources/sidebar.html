@@ -534,8 +534,13 @@
                     if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
                     wrapper.classList.add('drop-above');
                 });
-                wrapper.addEventListener('dragleave', function() {
-                    wrapper.classList.remove('drop-above');
+                wrapper.addEventListener('dragleave', function(e) {
+                    // dragleave also fires when moving between this wrapper's own
+                    // children (pill/icon/tooltip); only clear the indicator when
+                    // the cursor truly leaves the wrapper, else it flickers.
+                    if (!e.relatedTarget || !wrapper.contains(e.relatedTarget)) {
+                        wrapper.classList.remove('drop-above');
+                    }
                 });
                 wrapper.addEventListener('drop', function(e) {
                     e.preventDefault();

@@ -1,4 +1,12 @@
 use log::{debug, warn};
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+/// Concurrent notification threads currently blocked in `wait_for_action`. A
+/// service spamming notifications (e.g. a JS loop) could otherwise spawn an
+/// unbounded number of ~5s-lived threads; past the cap we still SHOW the
+/// notification but skip the action-wait so no extra thread lingers.
+static ACTIVE_WAITERS: AtomicUsize = AtomicUsize::new(0);
+const MAX_WAITERS: usize = 24;
 
 /// Show an OS notification. On Linux, clicking the notification switches OmniChat
 /// to the originating service (`service_id`).
@@ -7,7 +15,7 @@ use log::{debug, warn};
 /// until the notification is actioned or closed, so it must never run on the CEF
 /// UI thread. If the desktop's notification daemon doesn't support actions, the
 /// click simply dismisses the notification (graceful degradation). The thread is
-/// bounded by the notification timeout, so it can't leak indefinitely.
+/// bounded by the notification timeout and the MAX_WAITERS cap.
 pub fn show(service_id: &str, service_name: &str, title: &str, body: &str) {
     debug!("Notification: [{service_name}] {title}: {body}");
 
@@ -38,16 +46,24 @@ pub fn show(service_id: &str, service_name: &str, title: &str, body: &str) {
                 debug!("Notification sent");
                 #[cfg(target_os = "linux")]
                 {
+                    // No service to focus -> nothing to wait for.
                     if service_id.is_empty() {
                         return;
                     }
+                    // Claim a waiter slot; over the cap, show-and-exit (no wait)
+                    // so a notification burst can't spawn unbounded blocked threads.
+                    if ACTIVE_WAITERS.fetch_add(1, Ordering::Relaxed) >= MAX_WAITERS {
+                        ACTIVE_WAITERS.fetch_sub(1, Ordering::Relaxed);
+                        return;
+                    }
                     // Blocks this (dedicated) thread until the notification is
-                    // actioned or auto-closes; then exits.
+                    // actioned or auto-closes; then frees the slot.
                     handle.wait_for_action(|action| {
                         if action == "default" || action == "__clicked" {
                             crate::app::post_activate_service(service_id.clone());
                         }
                     });
+                    ACTIVE_WAITERS.fetch_sub(1, Ordering::Relaxed);
                 }
                 #[cfg(not(target_os = "linux"))]
                 let _ = (&handle, &service_id);
