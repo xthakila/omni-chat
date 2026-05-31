@@ -744,6 +744,7 @@ function setFlag(s, flag, value) {{
     if (flag === 'muted') s.is_muted = value;
     else if (flag === 'notifications') s.is_notification_enabled = value;
     else if (flag === 'darkMode') s.is_dark_mode_enabled = value;
+    else if (flag === 'hibernation') s.is_hibernation_enabled = value;
 }}
 function moveSvc(from, to) {{
     if (to < 0 || to >= services.length) return;
@@ -798,6 +799,14 @@ function renderServices() {{
         ctrls.appendChild(chip('Mute', !!s.is_muted, function(v) {{ setFlag(s, 'muted', v); }}));
         ctrls.appendChild(chip('Notify', s.is_notification_enabled !== false, function(v) {{ setFlag(s, 'notifications', v); }}));
         ctrls.appendChild(chip('Dark', !!s.is_dark_mode_enabled, function(v) {{ setFlag(s, 'darkMode', v); }}));
+        // "Sleep" ON = this service may hibernate when idle (discards the page to
+        // save RAM, but pauses its notifications until reopened). OFF = stays
+        // loaded so it keeps notifying. Lets the user trade RAM vs notifications
+        // per service — the one lever that actually works (renderer pooling does
+        // not, because each service has its own RequestContext).
+        var sleepChip = chip('Sleep', s.is_hibernation_enabled !== false, function(v) {{ setFlag(s, 'hibernation', v); }});
+        sleepChip.title = 'On: may hibernate when idle (saves RAM, pauses notifications until reopened). Off: stays loaded so it keeps notifying.';
+        ctrls.appendChild(sleepChip);
         ctrls.appendChild(sepEl());
         ctrls.appendChild(removeBtn(s));
         row.appendChild(ico); row.appendChild(name); row.appendChild(ctrls);
