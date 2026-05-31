@@ -48,6 +48,12 @@ if [ -f "$SCRIPT_DIR/uninstall.sh" ]; then
     chmod +x "$INSTALL_DIR/uninstall.sh"
 fi
 
+# Install the Wayland app_id proxy (the launcher uses it on Wayland to give the
+# window a correct taskbar icon; it self-falls-back to a direct launch).
+if [ -f "$SCRIPT_DIR/wayland-app-id-proxy.py" ]; then
+    cp "$SCRIPT_DIR/wayland-app-id-proxy.py" "$INSTALL_DIR/wayland-app-id-proxy.py"
+fi
+
 echo "2. Installing recipes..."
 if [ -d "$SCRIPT_DIR/recipes" ]; then
     cp -r "$SCRIPT_DIR/recipes" "$INSTALL_DIR/recipes"
@@ -59,6 +65,12 @@ cat > "$BIN_DIR/omnichat" << LAUNCHER
 export CEF_PATH="$CEF_DIR"
 export LD_LIBRARY_PATH="\$CEF_PATH:\$LD_LIBRARY_PATH"
 cd "$INSTALL_DIR"
+# On Wayland, route through the app_id proxy so GNOME matches the taskbar icon to
+# omnichat.desktop. The proxy self-falls-back to a direct launch on any failure;
+# guard here too so a missing python3 never blocks startup.
+if [ "\$XDG_SESSION_TYPE" = "wayland" ] && command -v python3 >/dev/null 2>&1 && [ -f "$INSTALL_DIR/wayland-app-id-proxy.py" ]; then
+    exec python3 "$INSTALL_DIR/wayland-app-id-proxy.py" "$INSTALL_DIR/omnichat" "\$@"
+fi
 exec "$INSTALL_DIR/omnichat" "\$@"
 LAUNCHER
 chmod +x "$BIN_DIR/omnichat"

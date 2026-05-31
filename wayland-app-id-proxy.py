@@ -13,6 +13,7 @@ import subprocess
 import threading
 import signal
 import array
+import uuid
 
 APP_ID = b"omnichat"
 XDG_TOPLEVEL_SET_APP_ID_OPCODE = 3  # opcode 0=destroy, 1=set_parent, 2=set_title, 3=set_app_id
@@ -146,29 +147,56 @@ def main():
         print(f"Usage: {sys.argv[0]} <command> [args...]")
         sys.exit(1)
 
+    def run_direct():
+        # Fall back to launching the app WITHOUT the proxy, so a proxy problem
+        # can never prevent the app from starting.
+        os.execvp(sys.argv[1], sys.argv[1:])
+
     real_display = os.environ.get("WAYLAND_DISPLAY", "wayland-0")
     xdg_runtime = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
     real_path = os.path.join(xdg_runtime, real_display)
 
-    proxy_name = f"wayland-omnichat-{os.getpid()}"
+    # No Wayland socket to proxy -> just launch the app directly.
+    if not os.path.exists(real_path):
+        run_direct()
+
+    # Unpredictable, random socket name in the user-private (0700) XDG_RUNTIME_DIR.
+    # The old PID-based name was guessable, enabling a TOCTOU pre-create/symlink
+    # between unlink and bind. A random name removes that race.
+    proxy_name = f"wl-oc-{uuid.uuid4().hex[:12]}"
     proxy_path = os.path.join(xdg_runtime, proxy_name)
 
     try:
-        os.unlink(proxy_path)
-    except FileNotFoundError:
-        pass
-
-    server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    server.bind(proxy_path)
-    server.listen(16)
+        server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        if os.path.lexists(proxy_path):
+            os.unlink(proxy_path)
+        server.bind(proxy_path)
+        os.chmod(proxy_path, 0o600)
+        server.listen(16)
+    except OSError as e:
+        sys.stderr.write(f"[proxy] socket setup failed ({e}); launching directly\n")
+        run_direct()
 
     env = os.environ.copy()
     env["WAYLAND_DISPLAY"] = proxy_name
-    proc = subprocess.Popen(sys.argv[1:], env=env)
+    try:
+        proc = subprocess.Popen(sys.argv[1:], env=env)
+    except OSError:
+        try:
+            os.unlink(proxy_path)
+        except FileNotFoundError:
+            pass
+        run_direct()
 
     def cleanup(sig=None, frame=None):
-        proc.terminate()
-        server.close()
+        try:
+            proc.terminate()
+        except Exception:
+            pass
+        try:
+            server.close()
+        except Exception:
+            pass
         try:
             os.unlink(proxy_path)
         except FileNotFoundError:
