@@ -183,7 +183,7 @@ CommonJS polyfills: `require('path')`, `require('fs')` (reads from a small per-r
 
 - **Origin-gated IPC.** Each CEF browser is classified at creation as the trusted sidebar, a trusted picker/settings overlay, or an untrusted service page. Privileged commands (add/remove/switch/reorder services, open/change settings) are honored **only** from trusted surfaces; a loaded (possibly compromised) service page cannot drive them. Service pages may report only their **own** badge/notification/title/avatar.
 - **URL-scheme allowlist.** `Ferdium.openNewWindow(url)` / link-opens are restricted to `http(s)` and `mailto`; `file://` and custom protocol handlers are refused.
-- **Recipe trust (note).** Recipe `webview.js` runs as trusted JavaScript inside each service. Only load recipes you trust. CEF runs with `no_sandbox` today; per-service RequestContext isolation separates cookies/storage. Recipe signing + a curated trusted set are planned.
+- **Recipe trust model.** Recipes are tagged **trusted** (bundled next to the binary / shipped with the app) or **untrusted** (dropped into your data dir or a Ferdium install). Only trusted recipes may call `injectJSUnsafe` (which injects arbitrary JS from the recipe's files) — for an untrusted recipe it's a logged no-op. All other shim APIs and `webview.js` still run for every recipe. Per-service RequestContext isolation separates cookies/storage. (CEF runs with `no_sandbox` today; a vendored+signed bundled set is a future enhancement.)
 - **Crash resilience.** State is guarded by a non-poisoning mutex and CEF callbacks degrade gracefully, so one error can't cascade-crash the app.
 
 ## Known Limitations

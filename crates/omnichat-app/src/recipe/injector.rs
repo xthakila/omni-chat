@@ -133,7 +133,14 @@ window.__omnichat_ferdium.injectCSS = function() {
     });
 };
 window.Ferdium.injectCSS = window.__omnichat_ferdium.injectCSS;
-window.__omnichat_ferdium.injectJSUnsafe = function() {
+"#,
+    );
+    // injectJSUnsafe injects arbitrary JS from the recipe's own files. Only honor
+    // it for TRUSTED (bundled) recipes; an untrusted (user-dropped) recipe gets a
+    // logged no-op, so a malicious recipe can't run unsafe injected JS.
+    if recipe.trusted {
+        js.push_str(
+            r#"window.__omnichat_ferdium.injectJSUnsafe = function() {
     [].slice.call(arguments).forEach(function(a) {
         if (typeof a !== 'string') return;
         var fn_ = a.split('/').pop().split('\\').pop();
@@ -147,9 +154,16 @@ window.__omnichat_ferdium.injectJSUnsafe = function() {
     });
 };
 window.Ferdium.injectJSUnsafe = window.__omnichat_ferdium.injectJSUnsafe;
-try {
 "#,
-    );
+        );
+    } else {
+        js.push_str(
+            r#"window.__omnichat_ferdium.injectJSUnsafe = function() { console.warn('[OmniChat] injectJSUnsafe blocked: untrusted recipe'); };
+window.Ferdium.injectJSUnsafe = window.__omnichat_ferdium.injectJSUnsafe;
+"#,
+        );
+    }
+    js.push_str("try {\n");
     js.push_str(webview_js);
     js.push_str("\nvar rf = module.exports;\n");
     let config_str = config.to_string();
@@ -242,4 +256,51 @@ fn js_escape(s: &str) -> String {
         .replace('"', "\\\"")
         .replace('\n', "\\n")
         .replace('\r', "")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::recipe::model::Recipe;
+    use crate::service::config::ServiceConfig;
+
+    fn test_recipe(trusted: bool) -> Recipe {
+        Recipe {
+            id: "test".into(),
+            name: "Test".into(),
+            version: "1".into(),
+            description: String::new(),
+            path: "/tmp/omnichat-nonexistent-recipe".into(),
+            trusted,
+            service_url: "https://test.example".into(),
+            has_direct_messages: true,
+            has_indirect_messages: false,
+            has_notification_sound: false,
+            has_team_id: false,
+            has_custom_url: false,
+            has_hosted_option: false,
+            url_input_prefix: String::new(),
+            url_input_suffix: String::new(),
+            disable_web_security: false,
+            message: String::new(),
+            webview_js: Some("/* recipe code */".into()),
+            darkmode_css: None,
+        }
+    }
+
+    #[test]
+    fn untrusted_recipe_blocks_inject_js_unsafe() {
+        let svc = ServiceConfig::new("s1".into(), "test".into(), "Test".into());
+        let js = build_injection_js("s1", &svc, &test_recipe(false));
+        assert!(js.contains("injectJSUnsafe blocked"));
+        assert!(!js.contains("document.documentElement.appendChild(script)"));
+    }
+
+    #[test]
+    fn trusted_recipe_allows_inject_js_unsafe() {
+        let svc = ServiceConfig::new("s1".into(), "test".into(), "Test".into());
+        let js = build_injection_js("s1", &svc, &test_recipe(true));
+        assert!(!js.contains("injectJSUnsafe blocked"));
+        assert!(js.contains("document.documentElement.appendChild(script)"));
+    }
 }

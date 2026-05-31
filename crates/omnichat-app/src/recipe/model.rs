@@ -12,6 +12,10 @@ pub struct Recipe {
     /// Path to the recipe directory on disk.
     #[serde(skip)]
     pub path: String,
+    /// Whether this recipe came from a trusted (bundled) source. Only trusted
+    /// recipes may use `injectJSUnsafe` (arbitrary unsafe JS injection).
+    #[serde(skip)]
+    pub trusted: bool,
 
     // --- config section (from package.json "config") ---
     #[serde(default)]

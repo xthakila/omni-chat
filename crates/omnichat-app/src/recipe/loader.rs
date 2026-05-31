@@ -4,59 +4,63 @@ use std::path::{Path, PathBuf};
 
 use super::model::Recipe;
 
-/// Returns the default directories to scan for Ferdium-compatible recipes.
-pub fn default_recipe_dirs() -> Vec<PathBuf> {
+/// Returns the default recipe directories to scan, each tagged with whether it
+/// is a TRUSTED source. Bundled recipes (shipped next to the binary or the dev
+/// workspace) are trusted; recipes a user drops into their data/Ferdium dirs are
+/// untrusted (they cannot use injectJSUnsafe). The first occurrence of a recipe
+/// id wins, so trusted (bundled) dirs are listed first.
+pub fn default_recipe_dirs() -> Vec<(PathBuf, bool)> {
     let mut dirs = Vec::new();
 
-    // 1. Bundled recipes next to the binary.
+    // 1. Bundled recipes next to the binary (TRUSTED — shipped with the app).
     if let Ok(exe) = std::env::current_exe() {
         if let Some(parent) = exe.parent() {
             let bundled = parent.join("recipes");
             if bundled.is_dir() {
-                dirs.push(bundled);
+                dirs.push((bundled, true));
             }
             // Also check sibling of the project dir.
             if let Some(grandparent) = parent.parent() {
                 let sibling = grandparent.join("recipes");
                 if sibling.is_dir() {
-                    dirs.push(sibling);
+                    dirs.push((sibling, true));
                 }
             }
         }
     }
 
-    // 2. User recipes in data dir.
+    // 2. Development: the workspace root's recipes/ folder (TRUSTED — repo).
+    let cwd_recipes = PathBuf::from("recipes");
+    if cwd_recipes.is_dir() {
+        dirs.push((cwd_recipes.canonicalize().unwrap_or(cwd_recipes), true));
+    }
+
+    // 3. User recipes in the data dir (UNTRUSTED — dropped in by the user).
     if let Some(data) = dirs_next::data_dir() {
         let user_recipes = data.join("omnichat").join("recipes");
         if user_recipes.is_dir() {
-            dirs.push(user_recipes);
+            dirs.push((user_recipes, false));
         }
     }
 
-    // 3. Ferdium recipes if available.
+    // 4. Ferdium recipes if available (UNTRUSTED — external).
     if let Some(data) = dirs_next::data_dir() {
         let ferdium_recipes = data.join("Ferdium").join("recipes");
         if ferdium_recipes.is_dir() {
-            dirs.push(ferdium_recipes);
+            dirs.push((ferdium_recipes, false));
         }
-    }
-
-    // 4. Development: look in the workspace root's recipes/ folder.
-    let cwd_recipes = PathBuf::from("recipes");
-    if cwd_recipes.is_dir() {
-        dirs.push(cwd_recipes.canonicalize().unwrap_or(cwd_recipes));
     }
 
     dirs
 }
 
 /// Scan directories for Ferdium-compatible recipe packages.
-pub fn scan_recipes(dirs: &[PathBuf]) -> Vec<Recipe> {
+pub fn scan_recipes(dirs: &[(PathBuf, bool)]) -> Vec<Recipe> {
     let mut recipes = Vec::new();
     let mut seen: HashMap<String, bool> = HashMap::new();
 
-    for dir in dirs {
-        info!("Scanning recipes in: {}", dir.display());
+    for (dir, trusted) in dirs {
+        info!("Scanning recipes in: {} (trusted={trusted})", dir.display());
         let entries = match std::fs::read_dir(dir) {
             Ok(e) => e,
             Err(e) => {
@@ -71,7 +75,7 @@ pub fn scan_recipes(dirs: &[PathBuf]) -> Vec<Recipe> {
                 continue;
             }
 
-            match load_recipe(&path) {
+            match load_recipe(&path, *trusted) {
                 Ok(recipe) => {
                     if seen.contains_key(&recipe.id) {
                         debug!("Skipping duplicate recipe: {}", recipe.id);
@@ -93,7 +97,7 @@ pub fn scan_recipes(dirs: &[PathBuf]) -> Vec<Recipe> {
 }
 
 /// Load a single recipe from a directory containing package.json.
-fn load_recipe(dir: &Path) -> Result<Recipe, String> {
+fn load_recipe(dir: &Path, trusted: bool) -> Result<Recipe, String> {
     let pkg_path = dir.join("package.json");
     if !pkg_path.exists() {
         return Err("No package.json".into());
@@ -153,6 +157,7 @@ fn load_recipe(dir: &Path) -> Result<Recipe, String> {
         version,
         description,
         path: dir.to_string_lossy().to_string(),
+        trusted,
         service_url,
         has_direct_messages,
         has_indirect_messages,
