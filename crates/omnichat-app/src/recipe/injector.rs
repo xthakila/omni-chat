@@ -214,17 +214,12 @@ fn notification_patch() -> String {
             t = t || ''; o = o || {};
             this._t = t; this._o = o; this._oc = null;
             var sid = (window.__omnichat_ferdium && window.__omnichat_ferdium._serviceId) || '';
-            // Deliver via the omnichat-ipc:// URL scheme (hidden iframe), NOT
-            // window.cefQuery: the message router does not deliver in this build,
-            // so a cefQuery-only path dropped every notification silently.
+            // Deliver via the console.log IPC sentinel (intercepted in
+            // on_console_message), NOT a hidden omnichat-ipc:// iframe: Chromium
+            // blocks subframe navigations to the unregistered scheme before they
+            // reach on_before_browse, so iframe-based notifications were dropped.
             var _m = JSON.stringify({type:'notification',serviceId:sid,title:t,body:o.body||'',icon:o.icon||'',tag:o.tag||'',silent:o.silent||false});
-            try {
-                var _f = document.createElement('iframe');
-                _f.style.display = 'none';
-                _f.src = 'omnichat-ipc://' + encodeURIComponent(_m);
-                (document.body || document.documentElement).appendChild(_f);
-                setTimeout(function() { if (_f.parentNode) _f.parentNode.removeChild(_f); }, 100);
-            } catch (e) {}
+            try { console.log('__OMNICHAT_IPC__' + _m); } catch (e) {}
         }
         static requestPermission(cb) { if (typeof cb==='function') cb('granted'); return Promise.resolve('granted'); }
         close() { this._oc = null; }

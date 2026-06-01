@@ -16,22 +16,20 @@
     var _darkModeHandler = null;
     var _toggleToTalkFn = null;
 
-    // Send IPC message to Rust via the omnichat-ipc:// URL scheme (intercepted in
-    // on_before_browse). We do NOT use window.cefQuery: the CEF message router's
-    // render->browser round-trip does not deliver in this build (the query hangs
-    // with no success/failure callback), so badges + notifications were silently
-    // dropped. The URL-scheme path (hidden iframe) is the reliable channel.
+    // Send IPC message to Rust via a console.log sentinel, intercepted in the
+    // DisplayHandler's on_console_message. We do NOT use:
+    //   - window.cefQuery: the CEF message router's render->browser round-trip
+    //     does not deliver in this build (the query hangs, no callback);
+    //   - a hidden iframe to omnichat-ipc://: Chromium blocks SUBFRAME
+    //     navigations to the unregistered scheme at the renderer, so they never
+    //     reach on_before_browse — every badge/title/notification from a service
+    //     page was silently dropped (only the sidebar's top-level location.href
+    //     navigation reached on_before_browse).
+    // console.log runs in this shim's main world, fires on_console_message for
+    // any frame, never navigates the page, and needs no scheme/CSP allowance.
+    var IPC_SENTINEL = '__OMNICHAT_IPC__';
     function sendIPC(msg) {
-        sendIPCviaURL(JSON.stringify(msg));
-    }
-
-    function sendIPCviaURL(json) {
-        var encoded = encodeURIComponent(json);
-        var iframe = document.createElement('iframe');
-        iframe.style.display = 'none';
-        iframe.src = 'omnichat-ipc://' + encoded;
-        document.body.appendChild(iframe);
-        setTimeout(function() { if (iframe.parentNode) iframe.parentNode.removeChild(iframe); }, 100);
+        try { console.log(IPC_SENTINEL + JSON.stringify(msg)); } catch (e) {}
     }
 
     // Helper: safely parse integer.
