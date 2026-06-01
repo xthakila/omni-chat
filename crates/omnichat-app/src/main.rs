@@ -174,6 +174,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let class_switch = CefString::from("class");
         let class_value = CefString::from("omnichat");
         global_cmd.append_switch_with_value(Some(&class_switch), Some(&class_value));
+
+        // GPU stability (prevents a hard MACHINE freeze, not just our process).
+        // On a Wayland session CEF selects the Wayland ozone backend, which is
+        // INCOMPATIBLE with Chromium's Vulkan GPU backend on common Intel (i915)
+        // drivers; the GPU process can hang the whole compositor — a full system
+        // freeze was reproduced on an Intel i3-1215U iGPU, and Intel-iGPU +
+        // Wayland is one of the most common Linux laptop configs, so this would
+        // hit many users, not just one machine.
+        //
+        // Software rendering is the ONLY configuration that cannot hang the GPU
+        // on any hardware/driver, and it is perfectly adequate for a messaging
+        // UI (text-heavy webviews) — so it is the DEFAULT on Linux. Opt into
+        // hardware acceleration with OMNICHAT_ENABLE_GPU=1; even then we disable
+        // Vulkan so accelerated users still avoid the specific Wayland hang.
+        if std::env::var_os("OMNICHAT_ENABLE_GPU").is_some() {
+            info!("OMNICHAT_ENABLE_GPU set — hardware acceleration on (Vulkan disabled)");
+            global_cmd.append_switch_with_value(
+                Some(&CefString::from("disable-features")),
+                Some(&CefString::from("Vulkan")),
+            );
+        } else {
+            global_cmd.append_switch(Some(&CefString::from("disable-gpu")));
+            global_cmd.append_switch(Some(&CefString::from("disable-gpu-compositing")));
+        }
     }
 
     // Optional remote DevTools port (off unless OMNICHAT_REMOTE_DEBUG_PORT is

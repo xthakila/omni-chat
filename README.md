@@ -91,6 +91,24 @@ omnichat
 
 Or find **OmniChat** in your application launcher.
 
+### Graphics (GPU vs software rendering)
+
+OmniChat **renders in software by default** on Linux. This is deliberate: on a
+Wayland session CEF/Chromium picks the Wayland ozone backend, which is
+incompatible with its Vulkan GPU backend on common Intel (i915) drivers — the
+GPU process can hang and **freeze the whole machine** (reproduced on an Intel
+i3-1215U; Intel iGPU + Wayland is a very common laptop config). Software
+rendering cannot hang the GPU on any hardware and is plenty fast for chat UIs.
+
+To opt into hardware acceleration (Vulkan is still disabled to avoid the hang):
+
+```bash
+OMNICHAT_ENABLE_GPU=1 omnichat
+```
+
+If you enable the GPU and hit graphical glitches or a freeze, just unset it to
+return to the safe default.
+
 ### Debugging
 
 Set `OMNICHAT_REMOTE_DEBUG_PORT` to expose CEF's DevTools protocol for the app's
