@@ -149,6 +149,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let root_cache = CefString::from(cache_dir.to_string_lossy().as_ref());
 
+    // Global browser cache: an explicit on-disk profile that is a DIRECT child of
+    // root_cache_path. With root_cache_path set but the global cache left empty
+    // (in-memory), per-service on-disk RequestContexts created under root_cache
+    // fail to bring up their renderer (service pages render blank). Giving the
+    // global context a real on-disk profile establishes the profile layout so the
+    // per-service profiles initialize correctly.
+    let global_cache_dir = cache_dir.join("default");
+    std::fs::create_dir_all(&global_cache_dir).ok();
+    let global_cache = CefString::from(global_cache_dir.to_string_lossy().as_ref());
+
     // Find the helper binary (subprocess for renderer/GPU/utility processes).
     let exe_dir = std::env::current_exe()
         .ok()
@@ -180,6 +190,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let settings = Settings {
         no_sandbox: 1,
         root_cache_path: root_cache,
+        cache_path: global_cache,
         browser_subprocess_path: helper_path_str,
         remote_debugging_port: remote_debug_port,
         ..Default::default()
