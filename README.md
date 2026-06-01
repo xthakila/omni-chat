@@ -42,6 +42,25 @@ Ferdium uses Electron + React + MobX + AdonisJS + SQLite ORM + many simultaneous
 
 ## Install
 
+### Quick setup (recommended)
+
+From a source checkout, one script does everything — system libraries, Rust, the
+CEF runtime, build, and install:
+
+```bash
+git clone https://github.com/xthakila/omni-chat.git
+cd omni-chat
+./setup.sh            # idempotent; JOBS=4 ./setup.sh to cap build parallelism on low-RAM machines
+```
+
+To upgrade later (pull + rebuild + reinstall):
+
+```bash
+./update.sh
+```
+
+The manual steps below are equivalent, if you prefer to run them yourself.
+
 ### Prerequisites
 
 ```bash
