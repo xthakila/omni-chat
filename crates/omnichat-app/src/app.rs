@@ -134,6 +134,51 @@ wrap_app! {
                 RefCell::new(None),
             ))
         }
+
+        // Called by CEF DURING initialize() with the real command line. This is
+        // the ONLY reliable place to add switches: command_line_get_global() in
+        // main.rs returns None that early, so switches set there never apply.
+        fn on_before_command_line_processing(
+            &self,
+            process_type: Option<&CefString>,
+            command_line: Option<&mut CommandLine>,
+        ) {
+            // Empty/absent process_type == the browser process. Only touch the
+            // browser command line (CEF warns against modifying child ones); the
+            // GPU child inherits --disable-features from the browser.
+            let is_browser = process_type
+                .map(|p| CefString::to_string(p).is_empty())
+                .unwrap_or(true);
+            if !is_browser {
+                return;
+            }
+            let Some(cmd) = command_line else { return };
+
+            // Wayland app_id / X11 WM_CLASS. (This hook applies it; the
+            // command_line_get_global() path did not — hence the proxy fallback.)
+            cmd.append_switch_with_value(
+                Some(&CefString::from("class")),
+                Some(&CefString::from("omnichat")),
+            );
+
+            // GPU stability — prevents a hard MACHINE freeze, not just our
+            // process. On Wayland, CEF's Vulkan GPU backend is incompatible with
+            // the Wayland ozone backend on common Intel (i915) drivers and can
+            // hang the whole compositor (reproduced on an i3-1215U iGPU). Default
+            // to software rendering (cannot hang any GPU; fine for chat UIs);
+            // OMNICHAT_ENABLE_GPU=1 opts into HW accel with Vulkan disabled.
+            if std::env::var_os("OMNICHAT_ENABLE_GPU").is_some() {
+                info!("OMNICHAT_ENABLE_GPU set — hardware acceleration on (Vulkan disabled)");
+                cmd.append_switch_with_value(
+                    Some(&CefString::from("disable-features")),
+                    Some(&CefString::from("Vulkan")),
+                );
+            } else {
+                info!("GPU mode: software (default) — disabling GPU");
+                cmd.append_switch(Some(&CefString::from("disable-gpu")));
+                cmd.append_switch(Some(&CefString::from("disable-gpu-compositing")));
+            }
+        }
     }
 }
 
