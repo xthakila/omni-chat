@@ -21,7 +21,23 @@ echo
 # Need: C/C++ toolchain + cmake (CEF's build bits), pkg-config, GTK3 dev headers
 # (tray + window), and libxdo (window focus). Runtime libs come with the -dev pkgs.
 DEPS_APT="build-essential pkg-config cmake libgtk-3-dev libxdo-dev"
-if command -v apt-get >/dev/null 2>&1; then
+
+# Are all build deps already present? If so, skip the package step entirely — no
+# sudo needed (keeps re-runs idempotent and works in passwordless/CI shells).
+deps_satisfied() {
+    command -v cc        >/dev/null 2>&1 || return 1
+    command -v cmake     >/dev/null 2>&1 || return 1
+    command -v pkg-config >/dev/null 2>&1 || return 1
+    pkg-config --exists gtk+-3.0 2>/dev/null || return 1
+    pkg-config --exists libxdo 2>/dev/null \
+        || ldconfig -p 2>/dev/null | grep -q 'libxdo\.so' \
+        || [ -e /usr/include/xdo.h ] || return 1
+    return 0
+}
+
+if deps_satisfied; then
+    say "Build dependencies already satisfied — skipping system package install"
+elif command -v apt-get >/dev/null 2>&1; then
     say "Installing system libraries (apt): $DEPS_APT"
     sudo apt-get update -qq
     sudo apt-get install -y $DEPS_APT
