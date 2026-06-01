@@ -113,6 +113,17 @@ wrap_load_handler! {
             }
 
             let failed_url = failed_url.map(CefString::to_string).unwrap_or_default();
+
+            // Internal app navigations are intercepted/cancelled by design:
+            // omnichat-ipc:// is the IPC transport (a hidden iframe per message,
+            // handled + cancelled in on_before_browse), and omnichat:// is used
+            // for injected-script source URLs. Their "load failure" is expected —
+            // never log it (badges/titles fire every poll → log spam) and never
+            // replace the frame with the error page.
+            if failed_url.starts_with("omnichat-ipc://") || failed_url.starts_with("omnichat://") {
+                return;
+            }
+
             error!("Load error for URL: {failed_url}");
 
             if let Some(frame) = frame {
